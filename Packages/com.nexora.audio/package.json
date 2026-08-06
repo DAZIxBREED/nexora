@@ -1,0 +1,9 @@
+{
+  "name": "com.nexora.audio",
+  "displayName": "Nexora Audio",
+  "version": "0.1.0-alpha.1",
+  "unity": "2022.3",
+  "description": "Shared gain, mute, and audio-output contracts for Nexora.",
+  "dependencies": { "com.nexora.core": "0.1.0-alpha.1", "com.nexora.sync": "0.1.0-alpha.1" },
+  "author": { "name": "DAZIxBREED" }
+}

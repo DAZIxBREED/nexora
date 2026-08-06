@@ -1,0 +1,9 @@
+{
+  "name": "com.nexora.diagnostics",
+  "displayName": "Nexora Diagnostics",
+  "version": "0.1.0-alpha.1",
+  "unity": "2022.3",
+  "description": "Local diagnostics, event history, and project validation for Nexora.",
+  "dependencies": { "com.nexora.core": "0.1.0-alpha.1" },
+  "author": { "name": "DAZIxBREED" }
+}

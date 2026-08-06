@@ -1,0 +1,5 @@
+{
+  "name": "Nexora.Spectra.Runtime",
+  "references": ["Nexora.Core.Runtime", "Nexora.Sync.Runtime", "UdonSharp.Runtime", "VRC.Udon"],
+  "autoReferenced": true
+}

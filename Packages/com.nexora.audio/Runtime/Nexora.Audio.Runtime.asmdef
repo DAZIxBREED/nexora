@@ -1,0 +1,5 @@
+{
+  "name": "Nexora.Audio.Runtime",
+  "references": ["Nexora.Core.Runtime", "Nexora.Sync.Runtime", "UdonSharp.Runtime"],
+  "autoReferenced": true
+}

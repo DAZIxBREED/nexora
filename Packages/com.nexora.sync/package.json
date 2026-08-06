@@ -1,0 +1,9 @@
+{
+  "name": "com.nexora.sync",
+  "displayName": "Nexora Sync",
+  "version": "0.1.0-alpha.1",
+  "unity": "2022.3",
+  "description": "Authoritative media snapshots, time reconstruction, and drift-safe synchronization.",
+  "dependencies": { "com.nexora.core": "0.1.0-alpha.1", "com.nexora.api": "0.1.0-alpha.1" },
+  "author": { "name": "DAZIxBREED" }
+}

@@ -1,0 +1,5 @@
+{
+  "name": "Nexora.Permissions.Runtime",
+  "references": ["Nexora.Core.Runtime", "Nexora.Api.Runtime", "UdonSharp.Runtime", "VRC.SDK3"],
+  "autoReferenced": true
+}

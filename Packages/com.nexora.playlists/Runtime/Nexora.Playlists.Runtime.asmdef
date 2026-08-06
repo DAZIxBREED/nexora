@@ -1,0 +1,5 @@
+{
+  "name": "Nexora.Playlists.Runtime",
+  "references": ["Nexora.Core.Runtime", "Nexora.Sync.Runtime", "Nexora.Permissions.Runtime", "UdonSharp.Runtime", "VRC.SDK3"],
+  "autoReferenced": true
+}

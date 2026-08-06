@@ -1,0 +1,5 @@
+{
+  "name": "Nexora.Diagnostics.Runtime",
+  "references": ["Nexora.Core.Runtime", "UdonSharp.Runtime"],
+  "autoReferenced": true
+}

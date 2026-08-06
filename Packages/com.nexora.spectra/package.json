@@ -1,0 +1,9 @@
+{
+  "name": "com.nexora.spectra",
+  "displayName": "Nexora SpectraOverdrive Integration",
+  "version": "0.1.0-alpha.1",
+  "unity": "2022.3",
+  "description": "First-party Nexora bridge for SpectraOverdrive timecode, playback, and cues.",
+  "dependencies": { "com.nexora.core": "0.1.0-alpha.1", "com.nexora.sync": "0.1.0-alpha.1" },
+  "author": { "name": "DAZIxBREED" }
+}

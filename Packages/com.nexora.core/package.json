@@ -1,0 +1,12 @@
+{
+  "name": "com.nexora.core",
+  "displayName": "Nexora Core",
+  "version": "0.1.0-alpha.1",
+  "unity": "2022.3",
+  "description": "Lifecycle, module hosting, shared events, and platform primitives for Nexora.",
+  "author": { "name": "DAZIxBREED" },
+  "vpmDependencies": {
+    "com.vrchat.worlds": "3.10.3",
+    "com.vrchat.udonsharp": "1.2.1"
+  }
+}

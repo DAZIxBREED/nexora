@@ -1,0 +1,9 @@
+{
+  "name": "com.nexora.playlists",
+  "displayName": "Nexora Playlists",
+  "version": "0.1.0-alpha.1",
+  "unity": "2022.3",
+  "description": "Synchronized playlist selection, repeat, and navigation.",
+  "dependencies": { "com.nexora.core": "0.1.0-alpha.1", "com.nexora.sync": "0.1.0-alpha.1", "com.nexora.permissions": "0.1.0-alpha.1" },
+  "author": { "name": "DAZIxBREED" }
+}

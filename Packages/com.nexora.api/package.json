@@ -1,0 +1,9 @@
+{
+  "name": "com.nexora.api",
+  "displayName": "Nexora API",
+  "version": "0.1.0-alpha.1",
+  "unity": "2022.3",
+  "description": "Stable extension contracts for Nexora modules.",
+  "dependencies": { "com.nexora.core": "0.1.0-alpha.1" },
+  "author": { "name": "DAZIxBREED" }
+}

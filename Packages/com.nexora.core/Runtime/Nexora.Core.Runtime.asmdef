@@ -1,0 +1,5 @@
+{
+  "name": "Nexora.Core.Runtime",
+  "references": ["UdonSharp.Runtime", "VRC.SDK3", "VRC.Udon"],
+  "autoReferenced": true
+}
