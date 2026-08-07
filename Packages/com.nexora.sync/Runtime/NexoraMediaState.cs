@@ -19,6 +19,7 @@ namespace Nexora.Sync
         [UdonSynced] public float volume = 1f;
         [UdonSynced] public bool loop;
         [UdonSynced] public int revision;
+        [UdonSynced] public int sourcePlayerId = -1;
 
         public double ExpectedMediaTime()
         {
@@ -30,22 +31,75 @@ namespace Nexora.Sync
 
         public void Commit(byte newState, double targetTime)
         {
-            if (!Networking.IsOwner(gameObject))
-            {
-                Networking.SetOwner(Networking.LocalPlayer, gameObject);
-            }
-
+            TakeOwnership();
             playbackState = newState;
             mediaTimeAtState = targetTime < 0d ? 0d : targetTime;
             stateServerTime = Networking.GetServerTimeInSeconds();
+            VRCPlayerApi local = Networking.LocalPlayer;
+            sourcePlayerId = local == null ? -1 : local.playerId;
             revision++;
             RequestSerialization();
-            if (moduleHost != null) moduleHost.Broadcast(NexoraEvent.Snapshot);
+            NotifySnapshot();
+        }
+
+        public void SetVolume(float value)
+        {
+            TakeOwnership();
+            volume = Mathf.Clamp01(value);
+            revision++;
+            RequestSerialization();
+            NotifySnapshot();
+        }
+
+        public void SetLoop(bool value)
+        {
+            TakeOwnership();
+            loop = value;
+            revision++;
+            RequestSerialization();
+            NotifySnapshot();
+        }
+
+        public void SetPlaybackSpeed(float value)
+        {
+            TakeOwnership();
+            mediaTimeAtState = ExpectedMediaTime();
+            stateServerTime = Networking.GetServerTimeInSeconds();
+            playbackSpeed = Mathf.Clamp(value, 0.25f, 4f);
+            revision++;
+            RequestSerialization();
+            NotifySnapshot();
         }
 
         public override void OnDeserialization()
         {
+            NotifySnapshot();
+        }
+
+        public override void OnPlayerJoined(VRCPlayerApi player)
+        {
+            if (Networking.IsOwner(gameObject))
+            {
+                RequestSerialization();
+            }
+        }
+
+        public override void OnOwnershipTransferred(VRCPlayerApi player)
+        {
+            NotifySnapshot();
+        }
+
+        private void NotifySnapshot()
+        {
             if (moduleHost != null) moduleHost.Broadcast(NexoraEvent.Snapshot);
+        }
+
+        private void TakeOwnership()
+        {
+            if (!Networking.IsOwner(gameObject) && Networking.LocalPlayer != null)
+            {
+                Networking.SetOwner(Networking.LocalPlayer, gameObject);
+            }
         }
     }
 }
