@@ -1,9 +1,9 @@
 {
   "name": "com.nexora.video",
   "displayName": "Nexora Video",
-  "version": "0.1.0-alpha.1",
+  "version": "0.2.1",
   "unity": "2022.3",
-  "description": "Backend-neutral video output adapters for Nexora.",
-  "dependencies": { "com.nexora.core": "0.1.0-alpha.1", "com.nexora.sync": "0.1.0-alpha.1" },
+  "description": "Platform-aware backend routing, state-driven playback, late-join replay, and drift correction for Nexora video.",
+  "dependencies": { "com.nexora.core": "0.1.0-alpha.1", "com.nexora.sync": "0.2.1" },
   "author": { "name": "DAZIxBREED" }
 }
