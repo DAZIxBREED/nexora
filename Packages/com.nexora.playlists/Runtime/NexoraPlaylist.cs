@@ -1,4 +1,5 @@
 using UdonSharp;
+using UnityEngine;
 using VRC.SDKBase;
 using Nexora.Core;
 using Nexora.Sync;
@@ -19,6 +20,8 @@ namespace Nexora.Playlists
 
         [Header("Synchronized selection")]
         [UdonSynced] public int currentIndex = -1;
+        [UdonSynced] public int previousIndex = -1;
+        [UdonSynced] public int queuedIndex = -1;
         [UdonSynced] public bool repeatPlaylist;
         [UdonSynced] public bool repeatCurrent;
         [UdonSynced] public int playlistRevision;
@@ -33,6 +36,11 @@ namespace Nexora.Playlists
             return currentIndex >= 0 && currentIndex < Count();
         }
 
+        public bool HasQueued()
+        {
+            return queuedIndex >= 0 && queuedIndex < Count();
+        }
+
         public string CurrentTitle()
         {
             if (!HasCurrent() || titles == null || currentIndex >= titles.Length) return "";
@@ -43,10 +51,32 @@ namespace Nexora.Playlists
         {
             if (!CanMutate() || urls == null || index < 0 || index >= urls.Length) return;
             TakeOwnership();
+            if (currentIndex != index) previousIndex = currentIndex;
             currentIndex = index;
+            if (queuedIndex == index) queuedIndex = -1;
             playlistRevision++;
             RequestSerialization();
             LoadCurrent();
+            NotifyChanged();
+        }
+
+        public void QueueNext(int index)
+        {
+            if (!CanMutate() || urls == null || index < 0 || index >= urls.Length) return;
+            TakeOwnership();
+            queuedIndex = index;
+            playlistRevision++;
+            RequestSerialization();
+            NotifyChanged();
+        }
+
+        public void ClearQueue()
+        {
+            if (!CanMutate()) return;
+            TakeOwnership();
+            queuedIndex = -1;
+            playlistRevision++;
+            RequestSerialization();
             NotifyChanged();
         }
 
@@ -57,6 +87,14 @@ namespace Nexora.Playlists
             if (repeatCurrent && HasCurrent())
             {
                 Select(currentIndex);
+                return;
+            }
+
+            if (HasQueued())
+            {
+                int queued = queuedIndex;
+                queuedIndex = -1;
+                Select(queued);
                 return;
             }
 
@@ -71,8 +109,15 @@ namespace Nexora.Playlists
 
         public void Previous()
         {
+            if (!CanMutate()) return;
+            if (previousIndex >= 0 && previousIndex < Count())
+            {
+                Select(previousIndex);
+                return;
+            }
+
             int count = Count();
-            if (!CanMutate() || count == 0) return;
+            if (count == 0) return;
             int previous = currentIndex < 0 ? 0 : currentIndex - 1;
             if (previous < 0)
             {
