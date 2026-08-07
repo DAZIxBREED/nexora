@@ -1,9 +1,9 @@
 {
   "name": "com.nexora.streaming",
   "displayName": "Nexora Streaming",
-  "version": "0.1.0-alpha.1",
+  "version": "0.2.1",
   "unity": "2022.3",
-  "description": "Live-stream health, reconnect, and provider-neutral state for Nexora.",
-  "dependencies": { "com.nexora.core": "0.1.0-alpha.1", "com.nexora.sync": "0.1.0-alpha.1" },
+  "description": "Live-stream health, bounded reconnect, automatic stall recovery, and provider-neutral recovery coordination.",
+  "dependencies": { "com.nexora.core": "0.1.0-alpha.1", "com.nexora.sync": "0.2.1", "com.nexora.video": "0.2.1" },
   "author": { "name": "DAZIxBREED" }
 }
