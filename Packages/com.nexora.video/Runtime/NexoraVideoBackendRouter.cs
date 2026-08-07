@@ -24,22 +24,39 @@ namespace Nexora.Video
         public string stopEvent = "NexoraStop";
         public string seekEvent = "NexoraSeek";
         public string settingsEvent = "NexoraApplySettings";
+        public string recoverEvent = "NexoraRecover";
 
+        [Header("Runtime state")]
         [HideInInspector] public VRCUrl mediaUrl;
         [HideInInspector] public float mediaTime;
         [HideInInspector] public float volume = 1f;
         [HideInInspector] public bool loop;
+        [HideInInspector] public float backendReportedTime;
+        [HideInInspector] public bool backendReady;
+        [HideInInspector] public int backendGeneration;
 
         private UdonBehaviour activeBackend;
 
         private void Start()
         {
-            activeBackend = SelectBackend();
+            RefreshBackend();
             PushSettings();
+        }
+
+        public void RefreshBackend()
+        {
+            UdonBehaviour selected = SelectBackend();
+            if (selected != activeBackend)
+            {
+                activeBackend = selected;
+                backendGeneration++;
+                backendReady = false;
+            }
         }
 
         public void Load()
         {
+            RefreshBackend();
             PushSettings();
             Send(loadEvent);
         }
@@ -67,17 +84,32 @@ namespace Nexora.Video
             Send(seekEvent);
         }
 
+        public void Recover()
+        {
+            RefreshBackend();
+            PushSettings();
+            Send(recoverEvent);
+        }
+
+        public void ReportBackendReady()
+        {
+            backendReady = true;
+        }
+
+        public void ReportBackendNotReady()
+        {
+            backendReady = false;
+        }
+
+        public void ReportBackendTime(float seconds)
+        {
+            backendReportedTime = Mathf.Max(0f, seconds);
+        }
+
         public void PushSettings()
         {
-            if (activeBackend == null)
-            {
-                activeBackend = SelectBackend();
-            }
-
-            if (activeBackend == null)
-            {
-                return;
-            }
+            RefreshBackend();
+            if (activeBackend == null) return;
 
             activeBackend.SetProgramVariable(urlVariable, mediaUrl);
             activeBackend.SetProgramVariable(timeVariable, mediaTime);
