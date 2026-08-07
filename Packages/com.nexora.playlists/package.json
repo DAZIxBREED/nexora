@@ -1,9 +1,9 @@
 {
   "name": "com.nexora.playlists",
   "displayName": "Nexora Playlists",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "unity": "2022.3",
   "description": "Synchronized playlist selection, queue-next behavior, one-step history, previous/next navigation, repeat-current, repeat-playlist, and revision tracking.",
-  "dependencies": { "com.nexora.core": "0.1.0-alpha.1", "com.nexora.sync": "0.2.1", "com.nexora.permissions": "0.2.0-alpha.1" },
+  "dependencies": { "com.nexora.core": "0.1.0-alpha.1", "com.nexora.sync": "0.2.2", "com.nexora.permissions": "0.2.0-alpha.1" },
   "author": { "name": "DAZIxBREED" }
 }
