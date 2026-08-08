@@ -21,54 +21,82 @@ namespace Nexora.Permissions
         [UdonSynced] public bool controlsLocked;
         [UdonSynced] public int policyRevision;
         [UdonSynced] public int lastPolicyActorId = -1;
-        public byte unlockedMinimumRole = NexoraRole.Guest;
-        public byte lockedMinimumRole = NexoraRole.DJ;
-        public byte administrationMinimumRole = NexoraRole.Moderator;
+        [UdonSynced] public byte unlockedMinimumRole = NexoraRole.Guest;
+        [UdonSynced] public byte lockedMinimumRole = NexoraRole.DJ;
+        [UdonSynced] public byte administrationMinimumRole = NexoraRole.Moderator;
 
         [Header("Local audit")]
+        [HideInInspector] public int allowedControlCount;
         [HideInInspector] public int deniedControlCount;
+        [HideInInspector] public int allowedAdministrationCount;
         [HideInInspector] public int deniedAdministrationCount;
-        [HideInInspector] public byte lastDeniedRole;
+        [HideInInspector] public byte lastDecisionRole;
+        [HideInInspector] public bool lastDecisionAllowed;
+        [HideInInspector] public string lastDecisionAction;
+        [HideInInspector] public int lastDecisionPlayerId = -1;
+        [HideInInspector] public float lastDecisionLocalTime;
 
         public byte LocalRole()
         {
-            VRCPlayerApi player = Networking.LocalPlayer;
+            return RoleForPlayer(Networking.LocalPlayer);
+        }
+
+        public byte RoleForPlayer(VRCPlayerApi player)
+        {
             if (player == null || !player.IsValid()) return NexoraRole.Guest;
             if (player.isInstanceOwner) return NexoraRole.Owner;
-            if (Networking.IsMaster) return NexoraRole.Master;
-            return RoleFor(player.displayName);
+            if (player.isMaster) return NexoraRole.Master;
+            return RoleForName(player.displayName);
+        }
+
+        public byte RoleForName(string displayName)
+        {
+            if (Contains(ownerNames, displayName)) return NexoraRole.Owner;
+            if (Contains(moderatorNames, displayName)) return NexoraRole.Moderator;
+            if (Contains(djNames, displayName)) return NexoraRole.DJ;
+            if (Contains(trustedNames, displayName)) return NexoraRole.Trusted;
+            return NexoraRole.Guest;
         }
 
         public bool IsLocalAuthorized()
         {
-            byte role = LocalRole();
-            bool allowed = controlsLocked ? role >= lockedMinimumRole : role >= unlockedMinimumRole;
-            if (!allowed)
-            {
-                deniedControlCount++;
-                lastDeniedRole = role;
-            }
+            return AuthorizeControl("control");
+        }
+
+        public bool AuthorizeControl(string action)
+        {
+            VRCPlayerApi player = Networking.LocalPlayer;
+            byte role = RoleForPlayer(player);
+            byte minimum = controlsLocked ? lockedMinimumRole : unlockedMinimumRole;
+            bool allowed = role >= minimum;
+
+            if (allowed) allowedControlCount++;
+            else deniedControlCount++;
+
+            RecordDecision(player, role, allowed, action);
             return allowed;
         }
 
         public bool IsLocalAdministrator()
         {
-            VRCPlayerApi player = Networking.LocalPlayer;
-            if (player == null || !player.IsValid())
-            {
-                deniedAdministrationCount++;
-                lastDeniedRole = NexoraRole.Guest;
-                return false;
-            }
-            if (player.isInstanceOwner || Networking.IsMaster) return true;
+            return AuthorizeAdministration("administration");
+        }
 
-            byte role = LocalRole();
-            bool allowed = role >= administrationMinimumRole;
-            if (!allowed)
+        public bool AuthorizeAdministration(string action)
+        {
+            VRCPlayerApi player = Networking.LocalPlayer;
+            byte role = RoleForPlayer(player);
+            bool allowed = false;
+
+            if (player != null && player.IsValid())
             {
-                deniedAdministrationCount++;
-                lastDeniedRole = role;
+                allowed = player.isInstanceOwner || player.isMaster || role >= administrationMinimumRole;
             }
+
+            if (allowed) allowedAdministrationCount++;
+            else deniedAdministrationCount++;
+
+            RecordDecision(player, role, allowed, action);
             return allowed;
         }
 
@@ -77,13 +105,25 @@ namespace Nexora.Permissions
             return LocalRole() >= lockedMinimumRole;
         }
 
+        public bool CanRoleControl(byte role)
+        {
+            return role >= (controlsLocked ? lockedMinimumRole : unlockedMinimumRole);
+        }
+
+        public bool CanRoleAdminister(byte role)
+        {
+            return role >= administrationMinimumRole;
+        }
+
         public void LockControls() { SetLocked(true); }
         public void UnlockControls() { SetLocked(false); }
         public void ToggleLocked() { SetLocked(!controlsLocked); }
 
         public void SetLocked(bool value)
         {
-            if (!IsLocalAdministrator()) return;
+            if (!AuthorizeAdministration(value ? "lock controls" : "unlock controls")) return;
+            if (controlsLocked == value) return;
+
             TakeOwnership();
             controlsLocked = value;
             policyRevision++;
@@ -93,9 +133,52 @@ namespace Nexora.Permissions
             NotifyPolicyChanged();
         }
 
+        public void SetUnlockedMinimumRole(byte role)
+        {
+            if (!AuthorizeAdministration("set unlocked minimum role")) return;
+            TakeOwnership();
+            unlockedMinimumRole = ClampRole(role);
+            policyRevision++;
+            RequestSerialization();
+            NotifyPolicyChanged();
+        }
+
+        public void SetLockedMinimumRole(byte role)
+        {
+            if (!AuthorizeAdministration("set locked minimum role")) return;
+            TakeOwnership();
+            lockedMinimumRole = ClampRole(role);
+            policyRevision++;
+            RequestSerialization();
+            NotifyPolicyChanged();
+        }
+
+        public void SetAdministrationMinimumRole(byte role)
+        {
+            if (!AuthorizeAdministration("set administration minimum role")) return;
+            TakeOwnership();
+            administrationMinimumRole = ClampRole(role);
+            policyRevision++;
+            RequestSerialization();
+            NotifyPolicyChanged();
+        }
+
         public override void OnDeserialization()
         {
             NotifyPolicyChanged();
+        }
+
+        public void ResetLocalAudit()
+        {
+            allowedControlCount = 0;
+            deniedControlCount = 0;
+            allowedAdministrationCount = 0;
+            deniedAdministrationCount = 0;
+            lastDecisionRole = NexoraRole.Guest;
+            lastDecisionAllowed = false;
+            lastDecisionAction = "";
+            lastDecisionPlayerId = -1;
+            lastDecisionLocalTime = 0f;
         }
 
         private void NotifyPolicyChanged()
@@ -103,13 +186,19 @@ namespace Nexora.Permissions
             if (moduleHost != null) moduleHost.Broadcast(NexoraEvent.LockChanged);
         }
 
-        private byte RoleFor(string displayName)
+        private void RecordDecision(VRCPlayerApi player, byte role, bool allowed, string action)
         {
-            if (Contains(ownerNames, displayName)) return NexoraRole.Owner;
-            if (Contains(moderatorNames, displayName)) return NexoraRole.Moderator;
-            if (Contains(djNames, displayName)) return NexoraRole.DJ;
-            if (Contains(trustedNames, displayName)) return NexoraRole.Trusted;
-            return NexoraRole.Guest;
+            lastDecisionRole = role;
+            lastDecisionAllowed = allowed;
+            lastDecisionAction = string.IsNullOrEmpty(action) ? "control" : action;
+            lastDecisionPlayerId = player == null ? -1 : player.playerId;
+            lastDecisionLocalTime = Time.realtimeSinceStartup;
+        }
+
+        private byte ClampRole(byte role)
+        {
+            if (role > NexoraRole.Master) return NexoraRole.Master;
+            return role;
         }
 
         private void TakeOwnership()
