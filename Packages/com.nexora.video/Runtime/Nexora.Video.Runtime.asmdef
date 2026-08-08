@@ -1,5 +1,11 @@
 {
   "name": "Nexora.Video.Runtime",
-  "references": ["Nexora.Core.Runtime", "Nexora.Sync.Runtime", "UdonSharp.Runtime", "VRC.Udon"],
+  "references": [
+    "Nexora.Core.Runtime",
+    "Nexora.Sync.Runtime",
+    "UdonSharp.Runtime",
+    "VRC.SDK3",
+    "VRC.Udon"
+  ],
   "autoReferenced": true
 }
