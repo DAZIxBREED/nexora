@@ -12,13 +12,12 @@ namespace Nexora.Video
         [Header("VRChat player")]
         public BaseVRCVideoPlayer player;
         public NexoraVideoBackendRouter router;
+        public NexoraVideoRequestGate requestGate;
         public AudioSource[] audioOutputs;
 
         [Header("Backend mode")]
         [Tooltip("Enable for AVPro/live-stream backends. Uses PlayURL instead of LoadURL for URL acquisition.")]
         public bool preferPlayUrl;
-        [Tooltip("VRChat globally rate-limits video URL requests. Keep this at or above 5 seconds.")]
-        public float minimumUrlRequestInterval = 5.1f;
         public float timeReportInterval = 0.25f;
 
         [Header("Router contract inputs")]
@@ -35,16 +34,16 @@ namespace Nexora.Video
         [HideInInspector] public int loadGeneration;
         [HideInInspector] public int successfulStarts;
         [HideInInspector] public int errorCount;
+        [HideInInspector] public int deferredRequestCount;
 
         private bool loadQueued;
         private bool seekPending;
         private float pendingSeek;
-        private float lastUrlRequestAt = -1000f;
         private bool timeTickScheduled;
+        private bool loadTickScheduled;
 
         private void Start()
         {
-            minimumUrlRequestInterval = Mathf.Max(5.05f, minimumUrlRequestInterval);
             timeReportInterval = Mathf.Max(0.1f, timeReportInterval);
             ApplyAudioSettings();
             ScheduleTimeTick();
@@ -150,15 +149,16 @@ namespace Nexora.Video
 
         public void ProcessQueuedLoad()
         {
+            loadTickScheduled = false;
             if (!loadQueued)
             {
                 return;
             }
 
-            float elapsed = Time.realtimeSinceStartup - lastUrlRequestAt;
-            if (elapsed < minimumUrlRequestInterval)
+            if (requestGate != null && !requestGate.TryAcquire())
             {
-                SendCustomEventDelayedSeconds(nameof(ProcessQueuedLoad), minimumUrlRequestInterval - elapsed);
+                deferredRequestCount++;
+                ScheduleLoadTick(Mathf.Max(0.1f, requestGate.SecondsUntilAvailable()));
                 return;
             }
 
@@ -317,7 +317,7 @@ namespace Nexora.Video
             }
 
             loadQueued = true;
-            ProcessQueuedLoad();
+            ScheduleLoadTick(0f);
         }
 
         private void BeginLoad()
@@ -340,7 +340,6 @@ namespace Nexora.Video
             }
 #endif
 
-            lastUrlRequestAt = Time.realtimeSinceStartup;
             loadGeneration++;
             loading = true;
             ready = false;
@@ -412,6 +411,24 @@ namespace Nexora.Video
 
             timeTickScheduled = true;
             SendCustomEventDelayedSeconds(nameof(TimeReportTick), timeReportInterval);
+        }
+
+        private void ScheduleLoadTick(float delay)
+        {
+            if (loadTickScheduled)
+            {
+                return;
+            }
+
+            loadTickScheduled = true;
+            if (delay <= 0f)
+            {
+                SendCustomEventDelayedFrames(nameof(ProcessQueuedLoad), 1);
+            }
+            else
+            {
+                SendCustomEventDelayedSeconds(nameof(ProcessQueuedLoad), delay);
+            }
         }
 
         private void ReportPlayerError(string message)
