@@ -1,9 +1,9 @@
 {
   "name": "com.nexora.permissions",
   "displayName": "Nexora Permissions",
-  "version": "0.2.0-alpha.1",
+  "version": "0.2.3",
   "unity": "2022.3",
-  "description": "Role-based command authorization, hardened administration policy, and synchronized UI locking.",
+  "description": "Role-based command authorization, administrative audit telemetry, hardened administration policy, and synchronized UI locking.",
   "dependencies": { "com.nexora.core": "0.1.0-alpha.1", "com.nexora.api": "0.1.0-alpha.1" },
   "author": { "name": "DAZIxBREED" }
 }
