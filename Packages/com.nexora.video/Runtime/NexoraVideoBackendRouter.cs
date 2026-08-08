@@ -34,12 +34,17 @@ namespace Nexora.Video
         [HideInInspector] public float backendReportedTime;
         [HideInInspector] public bool backendReady;
         [HideInInspector] public int backendGeneration;
+        [HideInInspector] public byte faultCode;
+        [HideInInspector] public string faultMessage;
+        [HideInInspector] public int faultCount;
+        [HideInInspector] public int recoveryCount;
 
         private UdonBehaviour activeBackend;
 
         private void Start()
         {
             RefreshBackend();
+            ValidateActiveBackend();
             PushSettings();
         }
 
@@ -51,42 +56,63 @@ namespace Nexora.Video
                 activeBackend = selected;
                 backendGeneration++;
                 backendReady = false;
+                ClearFault();
             }
+        }
+
+        public bool HasActiveBackend()
+        {
+            RefreshBackend();
+            return activeBackend != null;
+        }
+
+        public bool ValidateActiveBackend()
+        {
+            RefreshBackend();
+            if (activeBackend != null) return true;
+            ReportFault(NexoraBackendFault.PlatformBackendMissing, "No compatible Nexora video backend is assigned for this platform.");
+            return false;
         }
 
         public void Load()
         {
-            RefreshBackend();
+            if (!ValidateActiveBackend()) return;
             PushSettings();
             Send(loadEvent);
         }
 
         public void Play()
         {
+            if (!ValidateActiveBackend()) return;
             PushSettings();
             Send(playEvent);
         }
 
         public void Pause()
         {
+            if (!ValidateActiveBackend()) return;
             PushSettings();
             Send(pauseEvent);
         }
 
         public void Stop()
         {
+            if (!ValidateActiveBackend()) return;
             Send(stopEvent);
         }
 
         public void Seek()
         {
+            if (!ValidateActiveBackend()) return;
             PushSettings();
             Send(seekEvent);
         }
 
         public void Recover()
         {
-            RefreshBackend();
+            if (!ValidateActiveBackend()) return;
+            recoveryCount++;
+            backendReady = false;
             PushSettings();
             Send(recoverEvent);
         }
@@ -94,16 +120,50 @@ namespace Nexora.Video
         public void ReportBackendReady()
         {
             backendReady = true;
+            ClearFault();
         }
 
         public void ReportBackendNotReady()
         {
             backendReady = false;
+            if (faultCode == NexoraBackendFault.None)
+            {
+                ReportFault(NexoraBackendFault.NotReady, "Backend reported not ready.");
+            }
         }
 
         public void ReportBackendTime(float seconds)
         {
             backendReportedTime = Mathf.Max(0f, seconds);
+        }
+
+        public void ReportLoadFailed()
+        {
+            ReportFault(NexoraBackendFault.LoadFailed, "Backend failed to load media.");
+        }
+
+        public void ReportPlaybackFailed()
+        {
+            ReportFault(NexoraBackendFault.PlaybackFailed, "Backend playback failed.");
+        }
+
+        public void ReportUnsupportedMedia()
+        {
+            ReportFault(NexoraBackendFault.UnsupportedMedia, "Backend reported unsupported media.");
+        }
+
+        public void ReportFault(byte code, string message)
+        {
+            backendReady = false;
+            faultCode = code;
+            faultMessage = message == null ? "" : message;
+            faultCount++;
+        }
+
+        public void ClearFault()
+        {
+            faultCode = NexoraBackendFault.None;
+            faultMessage = "";
         }
 
         public void PushSettings()
