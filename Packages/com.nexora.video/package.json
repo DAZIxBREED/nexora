@@ -1,9 +1,9 @@
 {
   "name": "com.nexora.video",
   "displayName": "Nexora Video",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "unity": "2022.3",
-  "description": "Platform-aware backend routing, explicit backend fault reporting, recovery telemetry, state-driven playback, late-join replay, and automatic drift recovery for Nexora video.",
+  "description": "Concrete VRChat video playback, platform routing, global request throttling, backend fault reporting, automatic fallback, late-join replay, and drift recovery for Nexora.",
   "dependencies": { "com.nexora.core": "0.1.0-alpha.1", "com.nexora.sync": "0.2.2" },
   "author": { "name": "DAZIxBREED" }
 }
