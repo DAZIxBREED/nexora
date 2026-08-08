@@ -20,9 +20,15 @@ namespace Nexora.Permissions
         [Header("Control policy")]
         [UdonSynced] public bool controlsLocked;
         [UdonSynced] public int policyRevision;
+        [UdonSynced] public int lastPolicyActorId = -1;
         public byte unlockedMinimumRole = NexoraRole.Guest;
         public byte lockedMinimumRole = NexoraRole.DJ;
         public byte administrationMinimumRole = NexoraRole.Moderator;
+
+        [Header("Local audit")]
+        [HideInInspector] public int deniedControlCount;
+        [HideInInspector] public int deniedAdministrationCount;
+        [HideInInspector] public byte lastDeniedRole;
 
         public byte LocalRole()
         {
@@ -36,15 +42,34 @@ namespace Nexora.Permissions
         public bool IsLocalAuthorized()
         {
             byte role = LocalRole();
-            return controlsLocked ? role >= lockedMinimumRole : role >= unlockedMinimumRole;
+            bool allowed = controlsLocked ? role >= lockedMinimumRole : role >= unlockedMinimumRole;
+            if (!allowed)
+            {
+                deniedControlCount++;
+                lastDeniedRole = role;
+            }
+            return allowed;
         }
 
         public bool IsLocalAdministrator()
         {
             VRCPlayerApi player = Networking.LocalPlayer;
-            if (player == null || !player.IsValid()) return false;
+            if (player == null || !player.IsValid())
+            {
+                deniedAdministrationCount++;
+                lastDeniedRole = NexoraRole.Guest;
+                return false;
+            }
             if (player.isInstanceOwner || Networking.IsMaster) return true;
-            return LocalRole() >= administrationMinimumRole;
+
+            byte role = LocalRole();
+            bool allowed = role >= administrationMinimumRole;
+            if (!allowed)
+            {
+                deniedAdministrationCount++;
+                lastDeniedRole = role;
+            }
+            return allowed;
         }
 
         public bool CanControlWhileLocked()
@@ -52,20 +77,9 @@ namespace Nexora.Permissions
             return LocalRole() >= lockedMinimumRole;
         }
 
-        public void LockControls()
-        {
-            SetLocked(true);
-        }
-
-        public void UnlockControls()
-        {
-            SetLocked(false);
-        }
-
-        public void ToggleLocked()
-        {
-            SetLocked(!controlsLocked);
-        }
+        public void LockControls() { SetLocked(true); }
+        public void UnlockControls() { SetLocked(false); }
+        public void ToggleLocked() { SetLocked(!controlsLocked); }
 
         public void SetLocked(bool value)
         {
@@ -73,6 +87,8 @@ namespace Nexora.Permissions
             TakeOwnership();
             controlsLocked = value;
             policyRevision++;
+            VRCPlayerApi local = Networking.LocalPlayer;
+            lastPolicyActorId = local == null ? -1 : local.playerId;
             RequestSerialization();
             NotifyPolicyChanged();
         }
