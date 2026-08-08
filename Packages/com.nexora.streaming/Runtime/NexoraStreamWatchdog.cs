@@ -18,6 +18,7 @@ namespace Nexora.Streaming
         [HideInInspector] public float secondsWithoutProgress;
         [HideInInspector] public bool stalled;
         [HideInInspector] public int recoveryCount;
+        [HideInInspector] public int exhaustedRecoveryCount;
 
         private float lastBackendTime;
         private bool scheduled;
@@ -32,26 +33,34 @@ namespace Nexora.Streaming
         {
             scheduled = false;
 
-            if (video != null && video.backendReady)
+            if (video != null)
             {
-                float now = video.backendReportedTime;
-                float delta = Mathf.Abs(now - lastBackendTime);
-                if (delta >= minimumProgressSeconds)
+                if (video.faultCode != NexoraBackendFault.None && video.faultCode != NexoraBackendFault.NotReady)
                 {
-                    secondsWithoutProgress = 0f;
-                    stalled = false;
-                    if (reconnectPolicy != null) reconnectPolicy.ResetPolicy();
+                    Recover();
                 }
-                else
+                else if (video.backendReady)
                 {
-                    secondsWithoutProgress += Mathf.Max(0.1f, sampleIntervalSeconds);
-                    if (secondsWithoutProgress >= Mathf.Max(1f, stallTimeoutSeconds))
+                    float now = video.backendReportedTime;
+                    float delta = Mathf.Abs(now - lastBackendTime);
+                    if (delta >= minimumProgressSeconds)
                     {
-                        stalled = true;
-                        Recover();
+                        secondsWithoutProgress = 0f;
+                        stalled = false;
+                        if (reconnectPolicy != null) reconnectPolicy.ResetPolicy();
                     }
+                    else
+                    {
+                        secondsWithoutProgress += Mathf.Max(0.1f, sampleIntervalSeconds);
+                        if (secondsWithoutProgress >= Mathf.Max(1f, stallTimeoutSeconds))
+                        {
+                            stalled = true;
+                            video.ReportFault(NexoraBackendFault.Stalled, "Stream watchdog detected stalled playback.");
+                            Recover();
+                        }
+                    }
+                    lastBackendTime = now;
                 }
-                lastBackendTime = now;
             }
 
             Schedule();
@@ -60,7 +69,12 @@ namespace Nexora.Streaming
         public void Recover()
         {
             if (video == null) return;
-            if (reconnectPolicy != null && !reconnectPolicy.CanRetry()) return;
+            if (reconnectPolicy != null && !reconnectPolicy.CanRetry())
+            {
+                exhaustedRecoveryCount++;
+                video.ReportFault(NexoraBackendFault.RecoveryExhausted, "Stream recovery attempts exhausted.");
+                return;
+            }
 
             recoveryCount++;
             secondsWithoutProgress = 0f;
