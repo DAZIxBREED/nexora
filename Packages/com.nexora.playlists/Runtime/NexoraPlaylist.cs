@@ -23,14 +23,23 @@ namespace Nexora.Playlists
         [UdonSynced] public int previousIndex = -1;
         [UdonSynced] public int queuedIndex = -1;
         [UdonSynced] public int failedIndex = -1;
+        [UdonSynced] public int consecutiveFailureCount;
+        [UdonSynced] public int totalFailureCount;
         [UdonSynced] public bool repeatPlaylist;
         [UdonSynced] public bool repeatCurrent;
         [UdonSynced] public bool skipFailedItems = true;
         [UdonSynced] public int playlistRevision;
 
+        [Header("Failure policy")]
+        public int maximumConsecutiveFailures = 4;
+        public bool stopWhenFailureBudgetExhausted = true;
+
+        [HideInInspector] public int successfulSelectionCount;
+        [HideInInspector] public int automaticSkipCount;
+
         public int Count() { return urls == null ? 0 : urls.Length; }
-        public bool HasCurrent() { return currentIndex >= 0 && currentIndex < Count(); }
-        public bool HasQueued() { return queuedIndex >= 0 && queuedIndex < Count(); }
+        public bool HasCurrent() { return IsValidIndex(currentIndex); }
+        public bool HasQueued() { return IsValidIndex(queuedIndex); }
 
         public string CurrentTitle()
         {
@@ -38,23 +47,21 @@ namespace Nexora.Playlists
             return titles[currentIndex];
         }
 
+        public string TitleAt(int index)
+        {
+            if (!IsValidIndex(index) || titles == null || index >= titles.Length) return "";
+            return titles[index];
+        }
+
         public void Select(int index)
         {
-            if (!CanMutate() || urls == null || index < 0 || index >= urls.Length) return;
-            TakeOwnership();
-            if (currentIndex != index) previousIndex = currentIndex;
-            currentIndex = index;
-            failedIndex = -1;
-            if (queuedIndex == index) queuedIndex = -1;
-            playlistRevision++;
-            RequestSerialization();
-            LoadCurrent();
-            NotifyChanged();
+            if (!CanMutate() || !IsValidIndex(index)) return;
+            SelectInternal(index, false);
         }
 
         public void QueueNext(int index)
         {
-            if (!CanMutate() || urls == null || index < 0 || index >= urls.Length) return;
+            if (!CanMutate() || !IsValidIndex(index)) return;
             TakeOwnership();
             queuedIndex = index;
             playlistRevision++;
@@ -72,28 +79,51 @@ namespace Nexora.Playlists
             NotifyChanged();
         }
 
-        public void ReportCurrentFailed()
+        public void ReportCurrentSucceeded()
         {
             if (!CanMutate() || !HasCurrent()) return;
             TakeOwnership();
+            failedIndex = -1;
+            consecutiveFailureCount = 0;
+            successfulSelectionCount++;
+            playlistRevision++;
+            RequestSerialization();
+            NotifyChanged();
+        }
+
+        public void ReportCurrentFailed()
+        {
+            if (!CanMutate() || !HasCurrent()) return;
+
+            TakeOwnership();
             failedIndex = currentIndex;
+            consecutiveFailureCount++;
+            totalFailureCount++;
             playlistRevision++;
             RequestSerialization();
             NotifyChanged();
 
-            if (skipFailedItems)
+            if (!skipFailedItems) return;
+
+            if (maximumConsecutiveFailures > 0 && consecutiveFailureCount >= maximumConsecutiveFailures)
             {
-                AdvanceAfterFailure();
+                if (stopWhenFailureBudgetExhausted && state != null)
+                {
+                    state.Commit(Nexora.Api.NexoraPlaybackState.Stopped, state.ExpectedMediaTime());
+                }
+                return;
             }
+
+            AdvanceAfterFailure();
         }
 
         public void Next()
         {
-            int count = Count();
-            if (!CanMutate() || count == 0) return;
+            if (!CanMutate() || Count() == 0) return;
+
             if (repeatCurrent && HasCurrent())
             {
-                Select(currentIndex);
+                SelectInternal(currentIndex, false);
                 return;
             }
 
@@ -101,37 +131,33 @@ namespace Nexora.Playlists
             {
                 int queued = queuedIndex;
                 queuedIndex = -1;
-                Select(queued);
+                SelectInternal(queued, false);
                 return;
             }
 
-            int next = currentIndex < 0 ? 0 : currentIndex + 1;
-            if (next >= count)
-            {
-                if (!repeatPlaylist) return;
-                next = 0;
-            }
-            Select(next);
+            int next = NextSequentialIndex(currentIndex);
+            if (next >= 0) SelectInternal(next, false);
         }
 
         public void Previous()
         {
-            if (!CanMutate()) return;
-            if (previousIndex >= 0 && previousIndex < Count())
+            if (!CanMutate() || Count() == 0) return;
+
+            if (IsValidIndex(previousIndex))
             {
-                Select(previousIndex);
+                int target = previousIndex;
+                previousIndex = currentIndex;
+                SelectInternal(target, true);
                 return;
             }
 
-            int count = Count();
-            if (count == 0) return;
             int previous = currentIndex < 0 ? 0 : currentIndex - 1;
             if (previous < 0)
             {
                 if (!repeatPlaylist) return;
-                previous = count - 1;
+                previous = Count() - 1;
             }
-            Select(previous);
+            SelectInternal(previous, false);
         }
 
         public void SetRepeatPlaylist(bool value)
@@ -164,6 +190,17 @@ namespace Nexora.Playlists
             NotifyChanged();
         }
 
+        public void ResetFailureBudget()
+        {
+            if (!CanMutate()) return;
+            TakeOwnership();
+            failedIndex = -1;
+            consecutiveFailureCount = 0;
+            playlistRevision++;
+            RequestSerialization();
+            NotifyChanged();
+        }
+
         public override void OnDeserialization()
         {
             NotifyChanged();
@@ -171,31 +208,63 @@ namespace Nexora.Playlists
 
         private void AdvanceAfterFailure()
         {
-            int count = Count();
-            if (count == 0) return;
+            if (Count() == 0) return;
 
             if (HasQueued() && queuedIndex != failedIndex)
             {
                 int queued = queuedIndex;
                 queuedIndex = -1;
-                Select(queued);
+                automaticSkipCount++;
+                SelectInternal(queued, false);
                 return;
             }
 
-            int next = failedIndex + 1;
-            if (next >= count)
+            int next = NextSequentialIndex(failedIndex);
+            if (next >= 0 && next != failedIndex)
             {
-                if (!repeatPlaylist) return;
-                next = 0;
-            }
-
-            if (next != failedIndex)
-            {
-                Select(next);
+                automaticSkipCount++;
+                SelectInternal(next, false);
             }
         }
 
-        private bool CanMutate() { return access != null && access.IsLocalAuthorized(); }
+        private int NextSequentialIndex(int fromIndex)
+        {
+            int count = Count();
+            if (count == 0) return -1;
+
+            int next = fromIndex < 0 ? 0 : fromIndex + 1;
+            if (next >= count)
+            {
+                if (!repeatPlaylist) return -1;
+                next = 0;
+            }
+            return next;
+        }
+
+        private void SelectInternal(int index, bool preserveHistory)
+        {
+            if (!IsValidIndex(index)) return;
+
+            TakeOwnership();
+            if (!preserveHistory && currentIndex != index) previousIndex = currentIndex;
+            currentIndex = index;
+            failedIndex = -1;
+            if (queuedIndex == index) queuedIndex = -1;
+            playlistRevision++;
+            RequestSerialization();
+            LoadCurrent();
+            NotifyChanged();
+        }
+
+        private bool CanMutate()
+        {
+            return access != null && access.AuthorizeControl("playlist");
+        }
+
+        private bool IsValidIndex(int index)
+        {
+            return urls != null && index >= 0 && index < urls.Length;
+        }
 
         private void LoadCurrent()
         {
