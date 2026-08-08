@@ -8,10 +8,17 @@ namespace Nexora.Video
     [UdonBehaviourSyncMode(BehaviourSyncMode.NoVariableSync)]
     public class NexoraVideoBackendRouter : UdonSharpBehaviour
     {
-        [Header("Backend targets")]
+        [Header("Primary backend targets")]
         public UdonBehaviour pcBackend;
         public UdonBehaviour androidBackend;
         public UdonBehaviour iosBackend;
+
+        [Header("Fallback backend targets")]
+        public UdonBehaviour pcFallbackBackend;
+        public UdonBehaviour androidFallbackBackend;
+        public UdonBehaviour iosFallbackBackend;
+        public bool automaticFallback = true;
+        public int faultsBeforeFallback = 2;
 
         [Header("Backend contract")]
         public string urlVariable = "nexoraUrl";
@@ -38,11 +45,16 @@ namespace Nexora.Video
         [HideInInspector] public string faultMessage;
         [HideInInspector] public int faultCount;
         [HideInInspector] public int recoveryCount;
+        [HideInInspector] public int failoverCount;
+        [HideInInspector] public int consecutiveSevereFaults;
+        [HideInInspector] public bool usingFallback;
 
         private UdonBehaviour activeBackend;
+        private string activeUrl = "";
 
         private void Start()
         {
+            faultsBeforeFallback = Mathf.Max(1, faultsBeforeFallback);
             RefreshBackend();
             ValidateActiveBackend();
             PushSettings();
@@ -50,7 +62,13 @@ namespace Nexora.Video
 
         public void RefreshBackend()
         {
-            UdonBehaviour selected = SelectBackend();
+            UdonBehaviour selected = usingFallback ? SelectFallbackBackend() : SelectPrimaryBackend();
+            if (selected == null && usingFallback)
+            {
+                usingFallback = false;
+                selected = SelectPrimaryBackend();
+            }
+
             if (selected != activeBackend)
             {
                 activeBackend = selected;
@@ -70,12 +88,24 @@ namespace Nexora.Video
         {
             RefreshBackend();
             if (activeBackend != null) return true;
-            ReportFault(NexoraBackendFault.PlatformBackendMissing, "No compatible Nexora video backend is assigned for this platform.");
+            SetFault(NexoraBackendFault.PlatformBackendMissing, "No compatible Nexora video backend is assigned for this platform.", false);
             return false;
+        }
+
+        public bool HasFallbackBackend()
+        {
+            return SelectFallbackBackend() != null;
         }
 
         public void Load()
         {
+            string nextUrl = VRCUrl.IsNullOrEmpty(mediaUrl) ? "" : mediaUrl.Get();
+            if (nextUrl != activeUrl)
+            {
+                activeUrl = nextUrl;
+                ResetToPrimary();
+            }
+
             if (!ValidateActiveBackend()) return;
             PushSettings();
             Send(loadEvent);
@@ -99,6 +129,7 @@ namespace Nexora.Video
         {
             if (!ValidateActiveBackend()) return;
             Send(stopEvent);
+            backendReady = false;
         }
 
         public void Seek()
@@ -111,15 +142,69 @@ namespace Nexora.Video
         public void Recover()
         {
             if (!ValidateActiveBackend()) return;
+
+            if (automaticFallback && !usingFallback && consecutiveSevereFaults >= faultsBeforeFallback && HasFallbackBackend())
+            {
+                SwitchToFallback();
+                return;
+            }
+
             recoveryCount++;
             backendReady = false;
             PushSettings();
             Send(recoverEvent);
         }
 
+        public void SwitchToFallback()
+        {
+            UdonBehaviour fallback = SelectFallbackBackend();
+            if (fallback == null)
+            {
+                return;
+            }
+
+            UdonBehaviour previous = activeBackend;
+            if (previous != null && !string.IsNullOrEmpty(stopEvent))
+            {
+                previous.SendCustomEvent(stopEvent);
+            }
+
+            usingFallback = true;
+            activeBackend = fallback;
+            backendGeneration++;
+            backendReady = false;
+            failoverCount++;
+            consecutiveSevereFaults = 0;
+            ClearFault();
+            PushSettingsDirect();
+            Send(recoverEvent);
+        }
+
+        public void ResetToPrimary()
+        {
+            UdonBehaviour primary = SelectPrimaryBackend();
+            if (primary == null)
+            {
+                return;
+            }
+
+            if (activeBackend != null && activeBackend != primary && !string.IsNullOrEmpty(stopEvent))
+            {
+                activeBackend.SendCustomEvent(stopEvent);
+            }
+
+            usingFallback = false;
+            activeBackend = primary;
+            backendGeneration++;
+            backendReady = false;
+            consecutiveSevereFaults = 0;
+            ClearFault();
+        }
+
         public void ReportBackendReady()
         {
             backendReady = true;
+            consecutiveSevereFaults = 0;
             ClearFault();
         }
 
@@ -128,7 +213,7 @@ namespace Nexora.Video
             backendReady = false;
             if (faultCode == NexoraBackendFault.None)
             {
-                ReportFault(NexoraBackendFault.NotReady, "Backend reported not ready.");
+                SetFault(NexoraBackendFault.NotReady, "Backend reported not ready.", false);
             }
         }
 
@@ -154,10 +239,16 @@ namespace Nexora.Video
 
         public void ReportFault(byte code, string message)
         {
-            backendReady = false;
-            faultCode = code;
-            faultMessage = message == null ? "" : message;
-            faultCount++;
+            bool severe = code == NexoraBackendFault.LoadFailed ||
+                          code == NexoraBackendFault.PlaybackFailed ||
+                          code == NexoraBackendFault.UnsupportedMedia ||
+                          code == NexoraBackendFault.Stalled;
+            SetFault(code, message, severe);
+
+            if (automaticFallback && severe && !usingFallback && consecutiveSevereFaults >= faultsBeforeFallback && HasFallbackBackend())
+            {
+                SwitchToFallback();
+            }
         }
 
         public void ClearFault()
@@ -169,6 +260,11 @@ namespace Nexora.Video
         public void PushSettings()
         {
             RefreshBackend();
+            PushSettingsDirect();
+        }
+
+        private void PushSettingsDirect()
+        {
             if (activeBackend == null) return;
 
             activeBackend.SetProgramVariable(urlVariable, mediaUrl);
@@ -178,7 +274,19 @@ namespace Nexora.Video
             Send(settingsEvent);
         }
 
-        private UdonBehaviour SelectBackend()
+        private void SetFault(byte code, string message, bool severe)
+        {
+            backendReady = false;
+            faultCode = code;
+            faultMessage = message == null ? "" : message;
+            faultCount++;
+            if (severe)
+            {
+                consecutiveSevereFaults++;
+            }
+        }
+
+        private UdonBehaviour SelectPrimaryBackend()
         {
 #if UNITY_IOS
             if (iosBackend != null) return iosBackend;
@@ -188,6 +296,18 @@ namespace Nexora.Video
             if (pcBackend != null) return pcBackend;
             if (androidBackend != null) return androidBackend;
             return iosBackend;
+        }
+
+        private UdonBehaviour SelectFallbackBackend()
+        {
+#if UNITY_IOS
+            if (iosFallbackBackend != null) return iosFallbackBackend;
+#elif UNITY_ANDROID
+            if (androidFallbackBackend != null) return androidFallbackBackend;
+#endif
+            if (pcFallbackBackend != null) return pcFallbackBackend;
+            if (androidFallbackBackend != null) return androidFallbackBackend;
+            return iosFallbackBackend;
         }
 
         private void Send(string eventName)
