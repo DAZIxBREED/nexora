@@ -22,24 +22,15 @@ namespace Nexora.Playlists
         [UdonSynced] public int currentIndex = -1;
         [UdonSynced] public int previousIndex = -1;
         [UdonSynced] public int queuedIndex = -1;
+        [UdonSynced] public int failedIndex = -1;
         [UdonSynced] public bool repeatPlaylist;
         [UdonSynced] public bool repeatCurrent;
+        [UdonSynced] public bool skipFailedItems = true;
         [UdonSynced] public int playlistRevision;
 
-        public int Count()
-        {
-            return urls == null ? 0 : urls.Length;
-        }
-
-        public bool HasCurrent()
-        {
-            return currentIndex >= 0 && currentIndex < Count();
-        }
-
-        public bool HasQueued()
-        {
-            return queuedIndex >= 0 && queuedIndex < Count();
-        }
+        public int Count() { return urls == null ? 0 : urls.Length; }
+        public bool HasCurrent() { return currentIndex >= 0 && currentIndex < Count(); }
+        public bool HasQueued() { return queuedIndex >= 0 && queuedIndex < Count(); }
 
         public string CurrentTitle()
         {
@@ -53,6 +44,7 @@ namespace Nexora.Playlists
             TakeOwnership();
             if (currentIndex != index) previousIndex = currentIndex;
             currentIndex = index;
+            failedIndex = -1;
             if (queuedIndex == index) queuedIndex = -1;
             playlistRevision++;
             RequestSerialization();
@@ -78,6 +70,21 @@ namespace Nexora.Playlists
             playlistRevision++;
             RequestSerialization();
             NotifyChanged();
+        }
+
+        public void ReportCurrentFailed()
+        {
+            if (!CanMutate() || !HasCurrent()) return;
+            TakeOwnership();
+            failedIndex = currentIndex;
+            playlistRevision++;
+            RequestSerialization();
+            NotifyChanged();
+
+            if (skipFailedItems)
+            {
+                AdvanceAfterFailure();
+            }
         }
 
         public void Next()
@@ -147,15 +154,48 @@ namespace Nexora.Playlists
             NotifyChanged();
         }
 
+        public void SetSkipFailedItems(bool value)
+        {
+            if (!CanMutate()) return;
+            TakeOwnership();
+            skipFailedItems = value;
+            playlistRevision++;
+            RequestSerialization();
+            NotifyChanged();
+        }
+
         public override void OnDeserialization()
         {
             NotifyChanged();
         }
 
-        private bool CanMutate()
+        private void AdvanceAfterFailure()
         {
-            return access != null && access.IsLocalAuthorized();
+            int count = Count();
+            if (count == 0) return;
+
+            if (HasQueued() && queuedIndex != failedIndex)
+            {
+                int queued = queuedIndex;
+                queuedIndex = -1;
+                Select(queued);
+                return;
+            }
+
+            int next = failedIndex + 1;
+            if (next >= count)
+            {
+                if (!repeatPlaylist) return;
+                next = 0;
+            }
+
+            if (next != failedIndex)
+            {
+                Select(next);
+            }
         }
+
+        private bool CanMutate() { return access != null && access.IsLocalAuthorized(); }
 
         private void LoadCurrent()
         {
