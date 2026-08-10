@@ -1,9 +1,9 @@
 {
   "name": "com.nexora.sync",
   "displayName": "Nexora Sync",
-  "version": "0.2.2",
+  "version": "0.2.5",
   "unity": "2022.3",
-  "description": "Authoritative media snapshots, server-time reconstruction, late-join replay, drift health, ownership transfer, authority leases, and failover-safe synchronization.",
+  "description": "Monotonic accepted media snapshots, authoritative epochs, stale revision rejection, late-join replay, ownership-safe mutation, drift telemetry, authority leases, and failover-safe synchronization.",
   "dependencies": { "com.nexora.core": "0.1.0-alpha.1", "com.nexora.api": "0.1.0-alpha.1" },
   "author": { "name": "DAZIxBREED" }
 }
