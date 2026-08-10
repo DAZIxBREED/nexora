@@ -1,9 +1,9 @@
 {
   "name": "com.nexora.spectra",
   "displayName": "Nexora SpectraOverdrive Integration",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "unity": "2022.3",
-  "description": "First-party SpectraOverdrive bridge driven by Nexora 0.2.5 accepted authoritative time, playback state, revisions, epochs, and command metadata.",
-  "dependencies": { "com.nexora.core": "0.1.0-alpha.1", "com.nexora.sync": "0.2.5" },
+  "description": "First-party SpectraOverdrive bridge driven by permission-secured Nexora 0.2.6 accepted authoritative time, playback state, revisions, epochs, and command metadata.",
+  "dependencies": { "com.nexora.core": "0.1.0-alpha.1", "com.nexora.sync": "0.2.6" },
   "author": { "name": "DAZIxBREED" }
 }
