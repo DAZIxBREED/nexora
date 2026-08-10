@@ -12,17 +12,30 @@ namespace Nexora.Sync
         public float staleAfterSeconds = 18f;
         public bool masterMayRecoverStaleLease = true;
 
+        [Header("Authority state")]
+        public NexoraMediaState mediaState;
+
         [Header("Objects that follow authority")]
         public GameObject[] authorityObjects;
 
         [UdonSynced] public double lastHeartbeatServerTime;
         [UdonSynced] public int authorityPlayerId = -1;
         [UdonSynced] public int authorityEpoch;
+        [UdonSynced] public int heartbeatSequence;
+
+        [HideInInspector] public int recoveryCount;
+        [HideInInspector] public int ownershipTransferCount;
 
         private bool heartbeatScheduled;
 
         private void Start()
         {
+            if (Networking.IsOwner(gameObject) && authorityPlayerId < 0)
+            {
+                authorityEpoch++;
+                WriteHeartbeat();
+                AdoptMediaEpoch();
+            }
             ScheduleHeartbeat();
         }
 
@@ -37,6 +50,11 @@ namespace Nexora.Sync
             return Networking.IsOwner(gameObject);
         }
 
+        public bool IsPlayerAuthority(VRCPlayerApi player)
+        {
+            return player != null && player.IsValid() && player.playerId == authorityPlayerId;
+        }
+
         public void HeartbeatTick()
         {
             heartbeatScheduled = false;
@@ -44,6 +62,7 @@ namespace Nexora.Sync
             if (Networking.IsOwner(gameObject))
             {
                 WriteHeartbeat();
+                AdoptMediaEpoch();
             }
             else if (masterMayRecoverStaleLease && Networking.IsMaster && IsStale())
             {
@@ -61,7 +80,25 @@ namespace Nexora.Sync
             Networking.SetOwner(local, gameObject);
             TransferAuthorityObjects(local);
             authorityEpoch++;
+            recoveryCount++;
             WriteHeartbeat();
+            AdoptMediaEpoch();
+        }
+
+        public void TransferLeaseToLocal()
+        {
+            VRCPlayerApi local = Networking.LocalPlayer;
+            if (local == null || !local.IsValid()) return;
+
+            if (!Networking.IsOwner(gameObject))
+            {
+                Networking.SetOwner(local, gameObject);
+            }
+            TransferAuthorityObjects(local);
+            authorityEpoch++;
+            ownershipTransferCount++;
+            WriteHeartbeat();
+            AdoptMediaEpoch();
         }
 
         public override void OnPlayerLeft(VRCPlayerApi player)
@@ -70,17 +107,37 @@ namespace Nexora.Sync
             if (Networking.IsMaster) RecoverLease();
         }
 
+        public override void OnOwnershipTransferred(VRCPlayerApi player)
+        {
+            if (!Networking.IsOwner(gameObject)) return;
+            authorityEpoch++;
+            ownershipTransferCount++;
+            TransferAuthorityObjects(Networking.LocalPlayer);
+            WriteHeartbeat();
+            AdoptMediaEpoch();
+        }
+
         private void WriteHeartbeat()
         {
+            if (!Networking.IsOwner(gameObject)) return;
+
             VRCPlayerApi local = Networking.LocalPlayer;
             lastHeartbeatServerTime = Networking.GetServerTimeInSeconds();
             authorityPlayerId = local == null ? -1 : local.playerId;
+            heartbeatSequence++;
             RequestSerialization();
+        }
+
+        private void AdoptMediaEpoch()
+        {
+            if (mediaState == null || !Networking.IsOwner(mediaState.gameObject)) return;
+            mediaState.AdoptAuthorityEpoch(authorityEpoch);
         }
 
         private void TransferAuthorityObjects(VRCPlayerApi owner)
         {
-            if (authorityObjects == null) return;
+            if (owner == null || !owner.IsValid() || authorityObjects == null) return;
+
             int i = 0;
             while (i < authorityObjects.Length)
             {
