@@ -1,9 +1,17 @@
 {
   "name": "com.nexora.diagnostics",
   "displayName": "Nexora Diagnostics",
-  "version": "0.2.3",
+  "version": "0.2.9",
   "unity": "2022.3",
-  "description": "Local diagnostic history with severity tracking, counters, event visibility, and project validation for Nexora.",
-  "dependencies": { "com.nexora.core": "0.1.0-alpha.1" },
+  "description": "Unified operator health monitoring, structured fault history, authority/sync drift telemetry, backend/stream/playlist/permission health, platform reporting, and runtime health snapshots for Nexora.",
+  "dependencies": {
+    "com.nexora.core": "0.1.0-alpha.1",
+    "com.nexora.api": "0.1.0-alpha.1",
+    "com.nexora.sync": "0.2.6",
+    "com.nexora.video": "0.2.6",
+    "com.nexora.streaming": "0.2.8",
+    "com.nexora.playlists": "0.2.7",
+    "com.nexora.permissions": "0.2.7"
+  },
   "author": { "name": "DAZIxBREED" }
 }
