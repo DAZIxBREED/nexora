@@ -55,13 +55,13 @@ namespace Nexora.Playlists
 
         public void Select(int index)
         {
-            if (!CanMutate() || !IsValidIndex(index)) return;
+            if (!CanMutate("select") || !IsValidIndex(index)) return;
             SelectInternal(index, false);
         }
 
         public void QueueNext(int index)
         {
-            if (!CanMutate() || !IsValidIndex(index)) return;
+            if (!CanMutate("queue-next") || !IsValidIndex(index)) return;
             TakeOwnership();
             queuedIndex = index;
             playlistRevision++;
@@ -71,7 +71,7 @@ namespace Nexora.Playlists
 
         public void ClearQueue()
         {
-            if (!CanMutate()) return;
+            if (!CanMutate("clear-queue")) return;
             TakeOwnership();
             queuedIndex = -1;
             playlistRevision++;
@@ -81,7 +81,7 @@ namespace Nexora.Playlists
 
         public void ReportCurrentSucceeded()
         {
-            if (!CanMutate() || !HasCurrent()) return;
+            if (!CanMutate("report-success") || !HasCurrent()) return;
             TakeOwnership();
             failedIndex = -1;
             consecutiveFailureCount = 0;
@@ -93,7 +93,7 @@ namespace Nexora.Playlists
 
         public void ReportCurrentFailed()
         {
-            if (!CanMutate() || !HasCurrent()) return;
+            if (!CanMutate("report-failure") || !HasCurrent()) return;
 
             TakeOwnership();
             failedIndex = currentIndex;
@@ -119,7 +119,7 @@ namespace Nexora.Playlists
 
         public void Next()
         {
-            if (!CanMutate() || Count() == 0) return;
+            if (!CanMutate("next") || Count() == 0) return;
 
             if (repeatCurrent && HasCurrent())
             {
@@ -141,7 +141,7 @@ namespace Nexora.Playlists
 
         public void Previous()
         {
-            if (!CanMutate() || Count() == 0) return;
+            if (!CanMutate("previous") || Count() == 0) return;
 
             if (IsValidIndex(previousIndex))
             {
@@ -162,7 +162,7 @@ namespace Nexora.Playlists
 
         public void SetRepeatPlaylist(bool value)
         {
-            if (!CanMutate()) return;
+            if (!CanMutate("repeat-playlist")) return;
             TakeOwnership();
             repeatPlaylist = value;
             playlistRevision++;
@@ -172,7 +172,7 @@ namespace Nexora.Playlists
 
         public void SetRepeatCurrent(bool value)
         {
-            if (!CanMutate()) return;
+            if (!CanMutate("repeat-current")) return;
             TakeOwnership();
             repeatCurrent = value;
             playlistRevision++;
@@ -182,7 +182,7 @@ namespace Nexora.Playlists
 
         public void SetSkipFailedItems(bool value)
         {
-            if (!CanMutate()) return;
+            if (!CanMutate("skip-failed-items")) return;
             TakeOwnership();
             skipFailedItems = value;
             playlistRevision++;
@@ -192,7 +192,7 @@ namespace Nexora.Playlists
 
         public void ResetFailureBudget()
         {
-            if (!CanMutate()) return;
+            if (!CanMutate("reset-failure-budget")) return;
             TakeOwnership();
             failedIndex = -1;
             consecutiveFailureCount = 0;
@@ -256,9 +256,9 @@ namespace Nexora.Playlists
             NotifyChanged();
         }
 
-        private bool CanMutate()
+        private bool CanMutate(string action)
         {
-            return access != null && access.AuthorizeControl("playlist");
+            return access != null && access.AuthorizePlaylist(action);
         }
 
         private bool IsValidIndex(int index)
