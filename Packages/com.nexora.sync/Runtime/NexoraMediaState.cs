@@ -3,6 +3,7 @@ using UnityEngine;
 using VRC.SDKBase;
 using Nexora.Api;
 using Nexora.Core;
+using Nexora.Permissions;
 
 namespace Nexora.Sync
 {
@@ -11,6 +12,7 @@ namespace Nexora.Sync
     {
         public NexoraModuleHost moduleHost;
         public NexoraAuthorityLease authorityLease;
+        public NexoraAccessControl accessControl;
 
         [Header("Synchronized authoritative state")]
         [UdonSynced] public VRCUrl mediaUrl;
@@ -47,6 +49,13 @@ namespace Nexora.Sync
         [HideInInspector] public int epochAdvanceCount;
         [HideInInspector] public int rejectedStateRestoreCount;
 
+        [Header("Command security telemetry")]
+        [HideInInspector] public int allowedCommandCount;
+        [HideInInspector] public int rejectedCommandCount;
+        [HideInInspector] public string lastRejectedCommand;
+        [HideInInspector] public int lastRejectedPlayerId = -1;
+        [HideInInspector] public float lastRejectedLocalTime;
+
         private void Start()
         {
             AcceptCurrentSnapshot(true);
@@ -66,6 +75,7 @@ namespace Nexora.Sync
 
         public void LoadMedia(VRCUrl url)
         {
+            if (!AuthorizeCommand("load")) return;
             PrepareMutation();
             mediaUrl = url;
             CommitPrepared(NexoraSyncCommand.Load, NexoraPlaybackState.Loading, 0d);
@@ -73,42 +83,49 @@ namespace Nexora.Sync
 
         public void Play()
         {
+            if (!AuthorizeCommand("play")) return;
             PrepareMutation();
             CommitPrepared(NexoraSyncCommand.Play, NexoraPlaybackState.Playing, ExpectedMediaTime());
         }
 
         public void Pause()
         {
+            if (!AuthorizeCommand("pause")) return;
             PrepareMutation();
             CommitPrepared(NexoraSyncCommand.Pause, NexoraPlaybackState.Paused, ExpectedMediaTime());
         }
 
         public void Stop()
         {
+            if (!AuthorizeCommand("stop")) return;
             PrepareMutation();
             CommitPrepared(NexoraSyncCommand.Stop, NexoraPlaybackState.Stopped, 0d);
         }
 
         public void Seek(double targetTime)
         {
+            if (!AuthorizeCommand("seek")) return;
             PrepareMutation();
             CommitPrepared(NexoraSyncCommand.Seek, playbackState, targetTime);
         }
 
         public void Commit(byte newState, double targetTime)
         {
+            if (!AuthorizeCommand("commit")) return;
             PrepareMutation();
             CommitPrepared(CommandForState(newState), newState, targetTime);
         }
 
         public void CommitCommand(byte newCommandType, byte newState, double targetTime)
         {
+            if (!AuthorizeCommand("commit-command")) return;
             PrepareMutation();
             CommitPrepared(newCommandType, newState, targetTime);
         }
 
         public void SetVolume(float value)
         {
+            if (!AuthorizeCommand("volume")) return;
             PrepareMutation();
             volume = Mathf.Clamp01(value);
             StampPreparedCommand(NexoraSyncCommand.Volume);
@@ -116,6 +133,7 @@ namespace Nexora.Sync
 
         public void SetLoop(bool value)
         {
+            if (!AuthorizeCommand("loop")) return;
             PrepareMutation();
             loop = value;
             StampPreparedCommand(NexoraSyncCommand.Loop);
@@ -123,6 +141,7 @@ namespace Nexora.Sync
 
         public void SetPlaybackSpeed(float value)
         {
+            if (!AuthorizeCommand("playback-speed")) return;
             PrepareMutation();
             mediaTimeAtState = ExpectedMediaTime();
             stateServerTime = Networking.GetServerTimeInSeconds();
@@ -213,6 +232,23 @@ namespace Nexora.Sync
             acceptedCommandType = commandType;
             acceptedSnapshotCount++;
             return true;
+        }
+
+        private bool AuthorizeCommand(string action)
+        {
+            bool allowed = accessControl != null && accessControl.AuthorizeTransport(action);
+            if (allowed)
+            {
+                allowedCommandCount++;
+                return true;
+            }
+
+            rejectedCommandCount++;
+            lastRejectedCommand = action == null ? "command" : action;
+            VRCPlayerApi local = Networking.LocalPlayer;
+            lastRejectedPlayerId = local == null ? -1 : local.playerId;
+            lastRejectedLocalTime = Time.realtimeSinceStartup;
+            return false;
         }
 
         private void PrepareMutation()
