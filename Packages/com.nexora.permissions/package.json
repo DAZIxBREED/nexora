@@ -1,9 +1,9 @@
 {
   "name": "com.nexora.permissions",
   "displayName": "Nexora Permissions",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "unity": "2022.3",
-  "description": "Command-path authorization, synchronized global and action-specific role policy, hardened administration controls, and local authorization audit history.",
+  "description": "Command-path authorization with dedicated transport, playlist, request, streaming, automation, administration, and synchronized lock policies.",
   "dependencies": { "com.nexora.core": "0.1.0-alpha.1", "com.nexora.api": "0.1.0-alpha.1" },
   "author": { "name": "DAZIxBREED" }
 }
