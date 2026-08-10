@@ -10,6 +10,12 @@ namespace Nexora.Streaming
     [UdonBehaviourSyncMode(BehaviourSyncMode.Manual)]
     public class NexoraStreamController : UdonSharpBehaviour
     {
+        public const byte SourceUnknown = 0;
+        public const byte SourceHls = 1;
+        public const byte SourceDash = 2;
+        public const byte SourceProviderLive = 3;
+        public const byte SourceDirect = 4;
+
         [Header("Dependencies")]
         public NexoraAccessControl access;
         public NexoraMediaState mediaState;
@@ -25,6 +31,7 @@ namespace Nexora.Streaming
 
         [Header("Synchronized stream state")]
         [UdonSynced] public VRCUrl sourceUrl;
+        [UdonSynced] public byte sourceKind = SourceUnknown;
         [UdonSynced] public byte streamState = NexoraStreamState.Idle;
         [UdonSynced] public byte failureCode = NexoraStreamFailure.None;
         [UdonSynced] public int streamRevision;
@@ -65,29 +72,21 @@ namespace Nexora.Streaming
             if (!Authorize("start")) return;
             if (VRCUrl.IsNullOrEmpty(url))
             {
-                SetFailed(NexoraStreamFailure.UnsupportedSource);
+                SetFailedAuthorized(NexoraStreamFailure.UnsupportedSource);
                 return;
             }
 
             TakeOwnership();
             sourceUrl = url;
+            sourceKind = ClassifySource(url);
             failureCode = NexoraStreamFailure.None;
             recoveryGeneration = 0;
+            consecutiveHealthySamples = 0;
             startCount++;
             CommitState(NexoraStreamState.Connecting);
 
             if (reconnectPolicy != null) reconnectPolicy.ResetPolicy();
-            if (mediaState != null)
-            {
-                mediaState.LoadMedia(url);
-                mediaState.Play();
-            }
-            else if (video != null)
-            {
-                video.mediaUrl = url;
-                video.Load();
-                video.Play();
-            }
+            StartPlaybackPath(url);
         }
 
         public void StopStream()
@@ -97,6 +96,7 @@ namespace Nexora.Streaming
             stopCount++;
             failureCode = NexoraStreamFailure.None;
             reportedLatencySeconds = 0f;
+            consecutiveHealthySamples = 0;
             CommitState(NexoraStreamState.Stopped);
 
             if (mediaState != null) mediaState.Stop();
@@ -106,7 +106,8 @@ namespace Nexora.Streaming
         public void ForceRecover()
         {
             if (!Authorize("recover")) return;
-            QueueRecovery(NexoraStreamFailure.BackendFault);
+            if (!Networking.IsOwner(gameObject)) TakeOwnership();
+            QueueRecoveryOwner(NexoraStreamFailure.BackendFault);
         }
 
         public void MarkLiveEdgeNow()
@@ -138,16 +139,30 @@ namespace Nexora.Streaming
             consecutiveHealthySamples = 0;
         }
 
+        public byte ClassifySource(VRCUrl url)
+        {
+            if (VRCUrl.IsNullOrEmpty(url)) return SourceUnknown;
+            string raw = url.Get();
+            if (string.IsNullOrEmpty(raw)) return SourceUnknown;
+            string lower = raw.ToLower();
+
+            if (lower.IndexOf(".m3u8") >= 0) return SourceHls;
+            if (lower.IndexOf(".mpd") >= 0) return SourceDash;
+            if (lower.IndexOf("twitch.tv") >= 0 || lower.IndexOf("youtube.com/live") >= 0 || lower.IndexOf("youtu.be/live") >= 0 || lower.IndexOf("kick.com") >= 0)
+                return SourceProviderLive;
+            if (lower.IndexOf(".mp4") >= 0 || lower.IndexOf(".webm") >= 0 || lower.IndexOf(".mov") >= 0)
+                return SourceDirect;
+            return SourceUnknown;
+        }
+
         private void EvaluateBackend()
         {
             if (streamState == NexoraStreamState.Idle || streamState == NexoraStreamState.Stopped || streamState == NexoraStreamState.Failed)
-            {
                 return;
-            }
 
             if (video.faultCode != NexoraBackendFault.None && video.faultCode != NexoraBackendFault.NotReady)
             {
-                QueueRecovery(NexoraStreamFailure.BackendFault);
+                if (Networking.IsOwner(gameObject)) QueueRecoveryOwner(NexoraStreamFailure.BackendFault);
                 return;
             }
 
@@ -156,17 +171,15 @@ namespace Nexora.Streaming
                 bufferingSampleCount++;
                 consecutiveHealthySamples = 0;
 
-                if (streamState == NexoraStreamState.Connecting && secondsInCurrentState >= startupTimeoutSeconds)
+                if (Networking.IsOwner(gameObject) && streamState == NexoraStreamState.Connecting && secondsInCurrentState >= startupTimeoutSeconds)
                 {
                     startupTimeoutCount++;
-                    QueueRecovery(NexoraStreamFailure.StartupTimeout);
+                    QueueRecoveryOwner(NexoraStreamFailure.StartupTimeout);
                     return;
                 }
 
-                if (streamState != NexoraStreamState.Recovering && streamState != NexoraStreamState.Connecting)
-                {
+                if (Networking.IsOwner(gameObject) && streamState != NexoraStreamState.Recovering && streamState != NexoraStreamState.Connecting)
                     CommitStateIfOwner(NexoraStreamState.Buffering);
-                }
                 return;
             }
 
@@ -178,11 +191,14 @@ namespace Nexora.Streaming
             {
                 bufferingSampleCount++;
                 consecutiveHealthySamples = 0;
-                if (streamState == NexoraStreamState.Live && secondsInCurrentState >= bufferingGraceSeconds)
+
+                if (Networking.IsOwner(gameObject) &&
+                    (streamState == NexoraStreamState.Live || streamState == NexoraStreamState.Buffering) &&
+                    secondsInCurrentState >= bufferingGraceSeconds)
                 {
-                    QueueRecovery(NexoraStreamFailure.Stalled);
+                    QueueRecoveryOwner(NexoraStreamFailure.Stalled);
                 }
-                else if (streamState != NexoraStreamState.Recovering)
+                else if (Networking.IsOwner(gameObject) && streamState != NexoraStreamState.Recovering && streamState != NexoraStreamState.Connecting)
                 {
                     CommitStateIfOwner(NexoraStreamState.Buffering);
                 }
@@ -191,12 +207,10 @@ namespace Nexora.Streaming
 
             healthySampleCount++;
             consecutiveHealthySamples++;
-            if (reconnectPolicy != null && reconnectPolicy.attempt > 0 && consecutiveHealthySamples >= healthySamplesToConfirmLive)
-            {
+            if (Networking.IsOwner(gameObject) && reconnectPolicy != null && reconnectPolicy.attempt > 0 && consecutiveHealthySamples >= healthySamplesToConfirmLive)
                 reconnectPolicy.ResetPolicy();
-            }
 
-            if (consecutiveHealthySamples >= healthySamplesToConfirmLive)
+            if (Networking.IsOwner(gameObject) && consecutiveHealthySamples >= healthySamplesToConfirmLive)
             {
                 failureCode = NexoraStreamFailure.None;
                 CommitStateIfOwner(NexoraStreamState.Live);
@@ -204,8 +218,9 @@ namespace Nexora.Streaming
             }
         }
 
-        private void QueueRecovery(byte reason)
+        private void QueueRecoveryOwner(byte reason)
         {
+            if (!Networking.IsOwner(gameObject)) return;
             if (streamState == NexoraStreamState.Recovering) return;
 
             float delay = 0.1f;
@@ -214,14 +229,15 @@ namespace Nexora.Streaming
                 if (!reconnectPolicy.CanRetry())
                 {
                     failedRecoveryCount++;
-                    SetFailed(NexoraStreamFailure.RecoveryExhausted);
+                    SetFailedOwner(NexoraStreamFailure.RecoveryExhausted);
                     return;
                 }
+
                 delay = reconnectPolicy.RegisterFailure();
                 if (delay < 0f)
                 {
                     failedRecoveryCount++;
-                    SetFailed(NexoraStreamFailure.RecoveryExhausted);
+                    SetFailedOwner(NexoraStreamFailure.RecoveryExhausted);
                     return;
                 }
             }
@@ -229,32 +245,44 @@ namespace Nexora.Streaming
             failureCode = reason;
             recoveryGeneration++;
             recoveryCount++;
-            CommitStateIfOwner(NexoraStreamState.Recovering);
+            CommitState(NexoraStreamState.Recovering);
             SendCustomEventDelayedSeconds(nameof(ExecuteRecovery), Mathf.Max(0.1f, delay));
         }
 
         public void ExecuteRecovery()
         {
-            if (streamState != NexoraStreamState.Recovering) return;
+            if (!Networking.IsOwner(gameObject) || streamState != NexoraStreamState.Recovering) return;
 
             consecutiveHealthySamples = 0;
             secondsInCurrentState = 0f;
             if (video != null) video.Recover();
-            else if (mediaState != null && !VRCUrl.IsNullOrEmpty(sourceUrl))
+            else if (mediaState != null && !VRCUrl.IsNullOrEmpty(sourceUrl)) StartPlaybackPath(sourceUrl);
+
+            CommitState(NexoraStreamState.Connecting);
+        }
+
+        private void StartPlaybackPath(VRCUrl url)
+        {
+            if (mediaState != null)
             {
-                mediaState.LoadMedia(sourceUrl);
+                mediaState.LoadMedia(url);
                 mediaState.Play();
+                return;
             }
 
-            CommitStateIfOwner(NexoraStreamState.Connecting);
+            if (video != null)
+            {
+                video.mediaUrl = url;
+                video.Load();
+                video.Play();
+            }
         }
 
         private void UpdateLatencyIfOwner()
         {
-            if (liveEdgeServerTime <= 0d) return;
-            localLatencySeconds = Mathf.Max(0f, (float)(Networking.GetServerTimeInSeconds() - liveEdgeServerTime));
-            if (!Networking.IsOwner(gameObject)) return;
+            if (!Networking.IsOwner(gameObject) || liveEdgeServerTime <= 0d) return;
 
+            localLatencySeconds = Mathf.Max(0f, (float)(Networking.GetServerTimeInSeconds() - liveEdgeServerTime));
             float previous = reportedLatencySeconds;
             reportedLatencySeconds = localLatencySeconds;
             if (Mathf.Abs(previous - reportedLatencySeconds) >= 0.25f || reportedLatencySeconds > liveEdgeToleranceSeconds)
@@ -265,22 +293,28 @@ namespace Nexora.Streaming
             }
         }
 
-        private void SetFailed(byte reason)
+        private void SetFailedAuthorized(byte reason)
         {
+            TakeOwnership();
+            SetFailedOwner(reason);
+        }
+
+        private void SetFailedOwner(byte reason)
+        {
+            if (!Networking.IsOwner(gameObject)) return;
             failureCode = reason;
-            if (Networking.LocalPlayer != null) TakeOwnership();
             CommitState(NexoraStreamState.Failed);
         }
 
         private void CommitStateIfOwner(byte nextState)
         {
-            if (!Networking.IsOwner(gameObject)) return;
-            if (streamState == nextState) return;
+            if (!Networking.IsOwner(gameObject) || streamState == nextState) return;
             CommitState(nextState);
         }
 
         private void CommitState(byte nextState)
         {
+            if (!Networking.IsOwner(gameObject)) return;
             streamState = nextState;
             stateServerTime = Networking.GetServerTimeInSeconds();
             secondsInCurrentState = 0f;
@@ -304,9 +338,7 @@ namespace Nexora.Streaming
         {
             VRCPlayerApi local = Networking.LocalPlayer;
             if (local != null && local.IsValid() && !Networking.IsOwner(gameObject))
-            {
                 Networking.SetOwner(local, gameObject);
-            }
         }
 
         private void ScheduleSample()
