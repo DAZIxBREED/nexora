@@ -109,7 +109,7 @@ namespace Nexora.Playlists
             {
                 if (stopWhenFailureBudgetExhausted && state != null)
                 {
-                    state.Commit(Nexora.Api.NexoraPlaybackState.Stopped, state.ExpectedMediaTime());
+                    state.Stop();
                 }
                 return;
             }
@@ -269,8 +269,7 @@ namespace Nexora.Playlists
         private void LoadCurrent()
         {
             if (state == null || !HasCurrent()) return;
-            state.mediaUrl = urls[currentIndex];
-            state.Commit(Nexora.Api.NexoraPlaybackState.Loading, 0d);
+            state.LoadMedia(urls[currentIndex]);
         }
 
         private void NotifyChanged()
