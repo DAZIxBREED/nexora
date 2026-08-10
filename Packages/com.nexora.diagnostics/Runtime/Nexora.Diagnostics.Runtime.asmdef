@@ -9,7 +9,8 @@
     "Nexora.Playlists.Runtime",
     "Nexora.Permissions.Runtime",
     "UdonSharp.Runtime",
-    "VRC.SDK3"
+    "VRC.SDK3",
+    "VRC.Udon"
   ],
   "autoReferenced": true
 }
