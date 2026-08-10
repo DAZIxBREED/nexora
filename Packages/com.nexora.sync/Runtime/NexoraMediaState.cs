@@ -45,6 +45,7 @@ namespace Nexora.Sync
         [HideInInspector] public int duplicateSnapshotCount;
         [HideInInspector] public int staleSnapshotCount;
         [HideInInspector] public int epochAdvanceCount;
+        [HideInInspector] public int rejectedStateRestoreCount;
 
         private void Start()
         {
@@ -65,91 +66,80 @@ namespace Nexora.Sync
 
         public void LoadMedia(VRCUrl url)
         {
-            TakeOwnership();
+            PrepareMutation();
             mediaUrl = url;
-            CommitCommand(NexoraSyncCommand.Load, NexoraPlaybackState.Loading, 0d);
+            CommitPrepared(NexoraSyncCommand.Load, NexoraPlaybackState.Loading, 0d);
         }
 
         public void Play()
         {
-            CommitCommand(NexoraSyncCommand.Play, NexoraPlaybackState.Playing, ExpectedMediaTime());
+            PrepareMutation();
+            CommitPrepared(NexoraSyncCommand.Play, NexoraPlaybackState.Playing, ExpectedMediaTime());
         }
 
         public void Pause()
         {
-            CommitCommand(NexoraSyncCommand.Pause, NexoraPlaybackState.Paused, ExpectedMediaTime());
+            PrepareMutation();
+            CommitPrepared(NexoraSyncCommand.Pause, NexoraPlaybackState.Paused, ExpectedMediaTime());
         }
 
         public void Stop()
         {
-            CommitCommand(NexoraSyncCommand.Stop, NexoraPlaybackState.Stopped, 0d);
+            PrepareMutation();
+            CommitPrepared(NexoraSyncCommand.Stop, NexoraPlaybackState.Stopped, 0d);
         }
 
         public void Seek(double targetTime)
         {
-            CommitCommand(NexoraSyncCommand.Seek, playbackState, targetTime);
+            PrepareMutation();
+            CommitPrepared(NexoraSyncCommand.Seek, playbackState, targetTime);
         }
 
         public void Commit(byte newState, double targetTime)
         {
-            CommitCommand(CommandForState(newState), newState, targetTime);
+            PrepareMutation();
+            CommitPrepared(CommandForState(newState), newState, targetTime);
         }
 
         public void CommitCommand(byte newCommandType, byte newState, double targetTime)
         {
-            TakeOwnership();
-            CaptureAuthorityEpoch();
-
-            playbackState = newState;
-            mediaTimeAtState = targetTime < 0d ? 0d : targetTime;
-            stateServerTime = Networking.GetServerTimeInSeconds();
-
-            VRCPlayerApi local = Networking.LocalPlayer;
-            sourcePlayerId = local == null ? -1 : local.playerId;
-            commandType = newCommandType;
-            commandSequence++;
-            revision++;
-
-            AcceptCurrentSnapshot(true);
-            RequestSerialization();
-            NotifySnapshot();
+            PrepareMutation();
+            CommitPrepared(newCommandType, newState, targetTime);
         }
 
         public void SetVolume(float value)
         {
-            TakeOwnership();
-            CaptureAuthorityEpoch();
+            PrepareMutation();
             volume = Mathf.Clamp01(value);
-            StampCommand(NexoraSyncCommand.Volume);
+            StampPreparedCommand(NexoraSyncCommand.Volume);
         }
 
         public void SetLoop(bool value)
         {
-            TakeOwnership();
-            CaptureAuthorityEpoch();
+            PrepareMutation();
             loop = value;
-            StampCommand(NexoraSyncCommand.Loop);
+            StampPreparedCommand(NexoraSyncCommand.Loop);
         }
 
         public void SetPlaybackSpeed(float value)
         {
-            TakeOwnership();
-            CaptureAuthorityEpoch();
+            PrepareMutation();
             mediaTimeAtState = ExpectedMediaTime();
             stateServerTime = Networking.GetServerTimeInSeconds();
             playbackSpeed = Mathf.Clamp(value, 0.25f, 4f);
-            StampCommand(NexoraSyncCommand.PlaybackSpeed);
+            StampPreparedCommand(NexoraSyncCommand.PlaybackSpeed);
         }
 
         public void AdoptAuthorityEpoch(int newEpoch)
         {
             if (!Networking.IsOwner(gameObject)) return;
+            RestoreAcceptedIntoSynced();
             if (newEpoch <= authorityEpoch) return;
 
             mediaTimeAtState = ExpectedMediaTime();
             stateServerTime = Networking.GetServerTimeInSeconds();
             authorityEpoch = newEpoch;
-            StampCommand(NexoraSyncCommand.AuthorityTransfer);
+            StampPreparedCommand(NexoraSyncCommand.AuthorityTransfer);
         }
 
         public override void OnDeserialization()
@@ -172,6 +162,7 @@ namespace Nexora.Sync
         {
             if (Networking.IsOwner(gameObject))
             {
+                RestoreAcceptedIntoSynced();
                 CaptureAuthorityEpoch();
             }
             NotifySnapshot();
@@ -224,7 +215,22 @@ namespace Nexora.Sync
             return true;
         }
 
-        private void StampCommand(byte newCommandType)
+        private void PrepareMutation()
+        {
+            TakeOwnership();
+            RestoreAcceptedIntoSynced();
+            CaptureAuthorityEpoch();
+        }
+
+        private void CommitPrepared(byte newCommandType, byte newState, double targetTime)
+        {
+            playbackState = newState;
+            mediaTimeAtState = targetTime < 0d ? 0d : targetTime;
+            stateServerTime = Networking.GetServerTimeInSeconds();
+            StampPreparedCommand(newCommandType);
+        }
+
+        private void StampPreparedCommand(byte newCommandType)
         {
             VRCPlayerApi local = Networking.LocalPlayer;
             sourcePlayerId = local == null ? -1 : local.playerId;
@@ -234,6 +240,28 @@ namespace Nexora.Sync
             AcceptCurrentSnapshot(true);
             RequestSerialization();
             NotifySnapshot();
+        }
+
+        private void RestoreAcceptedIntoSynced()
+        {
+            if (acceptedRevision < 0) return;
+
+            bool rawRejected = authorityEpoch < acceptedAuthorityEpoch ||
+                (authorityEpoch == acceptedAuthorityEpoch && revision < acceptedRevision);
+            if (rawRejected) rejectedStateRestoreCount++;
+
+            mediaUrl = acceptedMediaUrl;
+            playbackState = acceptedPlaybackState;
+            stateServerTime = acceptedStateServerTime;
+            mediaTimeAtState = acceptedMediaTimeAtState;
+            playbackSpeed = acceptedPlaybackSpeed;
+            volume = acceptedVolume;
+            loop = acceptedLoop;
+            revision = acceptedRevision;
+            authorityEpoch = acceptedAuthorityEpoch;
+            sourcePlayerId = acceptedSourcePlayerId;
+            commandSequence = acceptedCommandSequence;
+            commandType = acceptedCommandType;
         }
 
         private void CaptureAuthorityEpoch()
