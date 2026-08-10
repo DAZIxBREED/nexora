@@ -1,5 +1,6 @@
 using UdonSharp;
 using UnityEngine;
+using VRC.SDKBase;
 using Nexora.Video;
 
 namespace Nexora.Streaming
@@ -7,30 +8,33 @@ namespace Nexora.Streaming
     [UdonBehaviourSyncMode(BehaviourSyncMode.NoVariableSync)]
     public class NexoraStreamWatchdog : UdonSharpBehaviour
     {
+        [Header("Dependencies")]
         public NexoraVideoBackendRouter video;
-        public NexoraReconnectPolicy reconnectPolicy;
+        public NexoraStreamController controller;
 
-        [Header("Stall detection")]
+        [Header("Observation policy")]
         public float sampleIntervalSeconds = 1f;
         public float stallTimeoutSeconds = 5f;
         public float minimumProgressSeconds = 0.05f;
         public float readyGraceSeconds = 4f;
 
+        [Header("Local telemetry")]
         [HideInInspector] public float secondsWithoutProgress;
         [HideInInspector] public float secondsWaitingForReady;
         [HideInInspector] public bool stalled;
-        [HideInInspector] public bool recoveryPending;
-        [HideInInspector] public int recoveryCount;
-        [HideInInspector] public int exhaustedRecoveryCount;
         [HideInInspector] public int healthySampleCount;
         [HideInInspector] public int stalledSampleCount;
-        [HideInInspector] public float scheduledRecoveryDelay;
+        [HideInInspector] public int backendFaultSampleCount;
+        [HideInInspector] public int delegatedRecoveryCount;
 
         private float lastBackendTime;
         private bool sampleScheduled;
 
         private void Start()
         {
+            sampleIntervalSeconds = Mathf.Max(0.1f, sampleIntervalSeconds);
+            stallTimeoutSeconds = Mathf.Max(1f, stallTimeoutSeconds);
+            readyGraceSeconds = Mathf.Max(1f, readyGraceSeconds);
             lastBackendTime = video == null ? 0f : video.backendReportedTime;
             ScheduleSample();
         }
@@ -45,26 +49,21 @@ namespace Nexora.Streaming
                 return;
             }
 
-            if (recoveryPending)
-            {
-                ScheduleSample();
-                return;
-            }
-
             if (video.faultCode != NexoraBackendFault.None && video.faultCode != NexoraBackendFault.NotReady)
             {
-                QueueRecovery();
+                backendFaultSampleCount++;
+                DelegateRecovery();
                 ScheduleSample();
                 return;
             }
 
             if (!video.backendReady)
             {
-                secondsWaitingForReady += Mathf.Max(0.1f, sampleIntervalSeconds);
-                if (secondsWaitingForReady >= Mathf.Max(1f, readyGraceSeconds))
+                secondsWaitingForReady += sampleIntervalSeconds;
+                if (secondsWaitingForReady >= readyGraceSeconds)
                 {
-                    video.ReportFault(NexoraBackendFault.NotReady, "Backend did not become ready inside the watchdog grace period.");
-                    QueueRecovery();
+                    video.ReportFault(NexoraBackendFault.NotReady, "Stream watchdog observed a backend readiness timeout.");
+                    DelegateRecovery();
                 }
                 ScheduleSample();
                 return;
@@ -79,20 +78,16 @@ namespace Nexora.Streaming
                 healthySampleCount++;
                 secondsWithoutProgress = 0f;
                 stalled = false;
-                if (reconnectPolicy != null && reconnectPolicy.attempt > 0)
-                {
-                    reconnectPolicy.ResetPolicy();
-                }
             }
             else
             {
                 stalledSampleCount++;
-                secondsWithoutProgress += Mathf.Max(0.1f, sampleIntervalSeconds);
-                if (secondsWithoutProgress >= Mathf.Max(1f, stallTimeoutSeconds))
+                secondsWithoutProgress += sampleIntervalSeconds;
+                if (secondsWithoutProgress >= stallTimeoutSeconds)
                 {
                     stalled = true;
-                    video.ReportFault(NexoraBackendFault.Stalled, "Stream watchdog detected stalled playback.");
-                    QueueRecovery();
+                    video.ReportFault(NexoraBackendFault.Stalled, "Stream watchdog observed stalled playback.");
+                    DelegateRecovery();
                 }
             }
 
@@ -100,63 +95,29 @@ namespace Nexora.Streaming
             ScheduleSample();
         }
 
-        public void QueueRecovery()
-        {
-            if (video == null || recoveryPending) return;
-
-            if (reconnectPolicy != null && !reconnectPolicy.CanRetry())
-            {
-                exhaustedRecoveryCount++;
-                video.ReportFault(NexoraBackendFault.RecoveryExhausted, "Stream recovery attempts exhausted.");
-                return;
-            }
-
-            float delay = 0.1f;
-            if (reconnectPolicy != null)
-            {
-                delay = reconnectPolicy.RegisterFailure();
-                if (delay < 0f)
-                {
-                    exhaustedRecoveryCount++;
-                    video.ReportFault(NexoraBackendFault.RecoveryExhausted, "Stream recovery attempts exhausted.");
-                    return;
-                }
-            }
-
-            recoveryPending = true;
-            scheduledRecoveryDelay = Mathf.Max(0.1f, delay);
-            SendCustomEventDelayedSeconds(nameof(ExecuteRecovery), scheduledRecoveryDelay);
-        }
-
-        public void ExecuteRecovery()
-        {
-            recoveryPending = false;
-            if (video == null) return;
-
-            recoveryCount++;
-            stalled = false;
-            secondsWithoutProgress = 0f;
-            secondsWaitingForReady = 0f;
-            lastBackendTime = video.backendReportedTime;
-            video.Recover();
-        }
-
         public void ResetWatchdog()
         {
-            recoveryPending = false;
             stalled = false;
             secondsWithoutProgress = 0f;
             secondsWaitingForReady = 0f;
-            scheduledRecoveryDelay = 0f;
             lastBackendTime = video == null ? 0f : video.backendReportedTime;
-            if (reconnectPolicy != null) reconnectPolicy.ResetPolicy();
+        }
+
+        private void DelegateRecovery()
+        {
+            if (controller == null) return;
+            if (!Networking.IsOwner(controller.gameObject)) return;
+            delegatedRecoveryCount++;
+            controller.ForceRecoverFromWatchdog();
+            secondsWithoutProgress = 0f;
+            secondsWaitingForReady = 0f;
         }
 
         private void ScheduleSample()
         {
             if (sampleScheduled) return;
             sampleScheduled = true;
-            SendCustomEventDelayedSeconds(nameof(Tick), Mathf.Max(0.1f, sampleIntervalSeconds));
+            SendCustomEventDelayedSeconds(nameof(Tick), sampleIntervalSeconds);
         }
     }
 }
