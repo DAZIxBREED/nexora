@@ -1,5 +1,5 @@
 {
   "name": "Nexora.Sync.Runtime",
-  "references": ["Nexora.Core.Runtime", "Nexora.Api.Runtime", "UdonSharp.Runtime", "VRC.SDK3"],
+  "references": ["Nexora.Core.Runtime", "Nexora.Api.Runtime", "Nexora.Permissions.Runtime", "UdonSharp.Runtime", "VRC.SDK3"],
   "autoReferenced": true
 }
