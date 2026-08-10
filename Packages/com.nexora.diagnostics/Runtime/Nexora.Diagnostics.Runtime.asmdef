@@ -1,5 +1,15 @@
 {
   "name": "Nexora.Diagnostics.Runtime",
-  "references": ["Nexora.Core.Runtime", "UdonSharp.Runtime"],
+  "references": [
+    "Nexora.Core.Runtime",
+    "Nexora.Api.Runtime",
+    "Nexora.Sync.Runtime",
+    "Nexora.Video.Runtime",
+    "Nexora.Streaming.Runtime",
+    "Nexora.Playlists.Runtime",
+    "Nexora.Permissions.Runtime",
+    "UdonSharp.Runtime",
+    "VRC.SDK3"
+  ],
   "autoReferenced": true
 }
