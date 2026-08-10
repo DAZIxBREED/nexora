@@ -1,9 +1,9 @@
 {
   "name": "com.nexora.playlists",
   "displayName": "Nexora Playlists",
-  "version": "0.2.3",
+  "version": "0.2.5",
   "unity": "2022.3",
-  "description": "Synchronized playlist selection, queue/history navigation, repeat controls, failed-item recovery, and revision tracking.",
-  "dependencies": { "com.nexora.core": "0.1.0-alpha.1", "com.nexora.sync": "0.2.2", "com.nexora.permissions": "0.2.3" },
+  "description": "Synchronized playlist selection, queue/history navigation, repeat controls, failed-item recovery, and transport commands routed through Nexora Sync 0.2.5.",
+  "dependencies": { "com.nexora.core": "0.1.0-alpha.1", "com.nexora.sync": "0.2.5", "com.nexora.permissions": "0.2.3" },
   "author": { "name": "DAZIxBREED" }
 }
