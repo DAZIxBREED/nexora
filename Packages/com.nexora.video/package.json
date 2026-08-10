@@ -1,9 +1,9 @@
 {
   "name": "com.nexora.video",
   "displayName": "Nexora Video",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "unity": "2022.3",
-  "description": "Concrete VRChat video playback, platform routing, global request throttling, backend fault reporting, automatic fallback, late-join replay, and drift recovery for Nexora.",
-  "dependencies": { "com.nexora.core": "0.1.0-alpha.1", "com.nexora.sync": "0.2.2" },
+  "description": "Concrete VRChat playback driven only by accepted authoritative snapshots, command-aware state application, global request throttling, backend fault reporting, fallback, and bounded drift correction.",
+  "dependencies": { "com.nexora.core": "0.1.0-alpha.1", "com.nexora.sync": "0.2.5" },
   "author": { "name": "DAZIxBREED" }
 }
