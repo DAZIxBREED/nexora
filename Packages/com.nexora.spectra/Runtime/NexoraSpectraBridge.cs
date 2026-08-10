@@ -11,8 +11,13 @@ namespace Nexora.Spectra
         public string timeVariable = "externalMediaTime";
         public string stateVariable = "externalPlaybackState";
         public string revisionVariable = "externalMediaRevision";
+        public string epochVariable = "externalAuthorityEpoch";
+        public string commandVariable = "externalCommandType";
         public string updateEvent = "OnNexoraTimeUpdate";
         public string playbackEvent = "OnNexoraPlaybackChanged";
+
+        [HideInInspector] public int pushedRevision = -1;
+        [HideInInspector] public int pushedAuthorityEpoch = -1;
 
         public override void NexoraInitialize()
         {
@@ -33,16 +38,21 @@ namespace Nexora.Spectra
         public override void NexoraOnTimeTick()
         {
             if (state == null || spectraReceiver == null) return;
-            spectraReceiver.SetProgramVariable(timeVariable, (float)state.ExpectedMediaTime());
+            spectraReceiver.SetProgramVariable(timeVariable, (float)state.AcceptedExpectedMediaTime());
             spectraReceiver.SendCustomEvent(updateEvent);
         }
 
         private void Push()
         {
             if (state == null || spectraReceiver == null) return;
-            spectraReceiver.SetProgramVariable(timeVariable, (float)state.ExpectedMediaTime());
-            spectraReceiver.SetProgramVariable(stateVariable, state.playbackState);
-            spectraReceiver.SetProgramVariable(revisionVariable, state.revision);
+
+            pushedRevision = state.acceptedRevision;
+            pushedAuthorityEpoch = state.acceptedAuthorityEpoch;
+            spectraReceiver.SetProgramVariable(timeVariable, (float)state.AcceptedExpectedMediaTime());
+            spectraReceiver.SetProgramVariable(stateVariable, state.acceptedPlaybackState);
+            spectraReceiver.SetProgramVariable(revisionVariable, state.acceptedRevision);
+            spectraReceiver.SetProgramVariable(epochVariable, state.acceptedAuthorityEpoch);
+            spectraReceiver.SetProgramVariable(commandVariable, state.acceptedCommandType);
         }
     }
 }
