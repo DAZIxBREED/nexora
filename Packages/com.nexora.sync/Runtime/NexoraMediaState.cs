@@ -63,6 +63,33 @@ namespace Nexora.Sync
             return ReconstructTime(acceptedMediaTimeAtState, acceptedStateServerTime, acceptedPlaybackSpeed);
         }
 
+        public void LoadMedia(VRCUrl url)
+        {
+            TakeOwnership();
+            mediaUrl = url;
+            CommitCommand(NexoraSyncCommand.Load, NexoraPlaybackState.Loading, 0d);
+        }
+
+        public void Play()
+        {
+            CommitCommand(NexoraSyncCommand.Play, NexoraPlaybackState.Playing, ExpectedMediaTime());
+        }
+
+        public void Pause()
+        {
+            CommitCommand(NexoraSyncCommand.Pause, NexoraPlaybackState.Paused, ExpectedMediaTime());
+        }
+
+        public void Stop()
+        {
+            CommitCommand(NexoraSyncCommand.Stop, NexoraPlaybackState.Stopped, 0d);
+        }
+
+        public void Seek(double targetTime)
+        {
+            CommitCommand(NexoraSyncCommand.Seek, playbackState, targetTime);
+        }
+
         public void Commit(byte newState, double targetTime)
         {
             CommitCommand(CommandForState(newState), newState, targetTime);
